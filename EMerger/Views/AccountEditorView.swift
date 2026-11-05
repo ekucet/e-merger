@@ -60,7 +60,7 @@ struct AccountEditorView: View {
             Form {
                 Section {
                     TextField("Etiket", text: $account.label, prompt: Text("Müdür"))
-                    TextField("Sunucu", text: $account.serverURL, prompt: Text("https://bitbucket.sirket.com.tr"))
+                    TextField("Sunucu", text: $account.serverURL, prompt: Text("https://sunucu.sirket.com.tr/bitbucket"))
                         .autocorrectionDisabled()
                 }
                 Section("Kimlik doğrulama") {
@@ -136,6 +136,15 @@ struct AccountEditorView: View {
             } else {
                 throw EMergerError.missingCredential(accountLabel: account.label)
             }
+            // Many servers live under a context path (…/bitbucket) and answer 503
+            // at the host root; find the real root before talking to it.
+            var detectedNote = ""
+            if let base = account.baseURL,
+               let detected = await BitbucketClient.detectBaseURL(from: base),
+               detected != base {
+                account.serverURL = detected.absoluteString
+                detectedNote = " · sunucu kökü: \(detected.path)"
+            }
             let client = try BitbucketClient(account: account, credential: cred)
             let name = try await client.whoami()
             account.username = name
@@ -150,10 +159,14 @@ struct AccountEditorView: View {
             } else if account.userSlug.isEmpty {
                 account.userSlug = name.lowercased()
             }
-            verifyMessage = "Bağlandı: \(account.displayName.isEmpty ? account.username : account.displayName) (\(account.username))"
+            verifyMessage = "Bağlandı: \(account.displayName.isEmpty ? account.username : account.displayName) (\(account.username))" + detectedNote
         } catch {
             verifyFailed = true
-            verifyMessage = error.localizedDescription
+            var message = error.localizedDescription
+            if case EMergerError.http(let status, _) = error, status == 503 || status == 404 {
+                message += " — Bu adreste Bitbucket yok gibi; adresin sonuna alt yolu ekleyin (örn. /bitbucket) veya VPN bağlantısını kontrol edin."
+            }
+            verifyMessage = message
         }
     }
 

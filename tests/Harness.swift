@@ -6,8 +6,8 @@ import Foundation
 private let testConfig = """
 {
   "accounts": [
-    {"id": "acc-mudur", "label": "Müdür", "serverURL": "http://localhost:7990", "username": "mudur", "displayName": "Ersel (Müdür)", "userSlug": "mudur", "isEnabled": true},
-    {"id": "acc-dev", "label": "Geliştirici", "serverURL": "http://localhost:7990", "username": "gelistirici", "displayName": "Ersel (Geliştirici)", "userSlug": "gelistirici", "isEnabled": true}
+    {"id": "acc-mudur", "label": "Müdür", "serverURL": "http://localhost:7990/bitbucket", "username": "mudur", "displayName": "Ersel (Müdür)", "userSlug": "mudur", "isEnabled": true},
+    {"id": "acc-dev", "label": "Geliştirici", "serverURL": "http://localhost:7990/bitbucket", "username": "gelistirici", "displayName": "Ersel (Geliştirici)", "userSlug": "gelistirici", "isEnabled": true}
   ],
   "watchedRepos": [{"id": "wr-1", "projectKey": "CORE", "slug": "payments"}],
   "ciTriggers": [{"id": "ci-1", "name": "Mock CI", "urlTemplate": "http://localhost:7990/ci/trigger?branch={branch}&pr={prId}", "method": "POST", "bodyTemplate": "{\\"repo\\":\\"{project}/{repo}\\",\\"commit\\":\\"{commit}\\"}", "contentType": "application/json", "secretHeaderName": "", "repoFilter": ""}]
@@ -42,6 +42,21 @@ struct Harness {
         let mudur = accounts.accounts.first { $0.label == "Müdür" }!
         let dev = accounts.accounts.first { $0.label == "Geliştirici" }!
         print("accounts:", accounts.accounts.map { "\($0.label)=\($0.username)" })
+
+        // Server root detection + identity (the mock serves under /bitbucket, 503 at "/",
+        // and its whoami servlet is empty like Data Center with HTTP access tokens).
+        let detected = await BitbucketClient.detectBaseURL(from: URL(string: "http://localhost:7990")!)
+        check("context path /bitbucket auto-detected from host root", detected?.absoluteString == "http://localhost:7990/bitbucket", detected?.absoluteString ?? "nil")
+        let kept = await BitbucketClient.detectBaseURL(from: URL(string: "http://localhost:7990/bitbucket")!)
+        check("explicit context path kept as-is", kept?.absoluteString == "http://localhost:7990/bitbucket", kept?.absoluteString ?? "nil")
+        let none = await BitbucketClient.detectBaseURL(from: URL(string: "http://localhost:7991")!)
+        check("unreachable host → nil", none == nil, none?.absoluteString ?? "nil")
+        do {
+            let who = try await accounts.client(for: mudur).whoami()
+            check("whoami via X-AUSERNAME (servlet empty)", who == "mudur", who)
+            let user = try await accounts.client(for: dev).user(slug: "gelistirici")
+            check("user lookup by slug", user.name == "gelistirici" && user.effectiveSlug == "gelistirici", user.name)
+        } catch { check("whoami / user lookup", false, error.localizedDescription) }
 
         await store.refresh()
         print("accountErrors:", store.accountErrors)

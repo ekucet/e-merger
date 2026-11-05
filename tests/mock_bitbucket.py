@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Mock Bitbucket Server / Data Center REST API. Usage: python3 -I mock_bitbucket.py [port]"""
+"""Mock Bitbucket Server / Data Center REST API.
+
+Usage: python3 -I mock_bitbucket.py [port] [context-path]
+
+With a context path (e.g. /bitbucket) every Bitbucket route lives under it and the
+host root answers 503 — like a corporate reverse proxy. Mirrors two real Data Center
+behaviours: REST responses carry `X-AUSERNAME`, and the applinks `whoami` servlet
+returns an empty body for HTTP access tokens."""
 import hashlib
 import json
 import re
@@ -10,7 +17,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 PORT = 7990
+CONTEXT = ""  # e.g. "/bitbucket"
 LOCK = threading.RLock()
+# Reachable without a Bitbucket token (the CI hook is a plain webhook; application-properties
+# is public on real servers and is what the app probes to find the context path).
+AUTH_EXEMPT = {"/ci/trigger", "/rest/api/1.0/application-properties", "/rest/api/latest/application-properties"}
 
 TOKENS = {"tok-mudur": "mudur", "tok-dev": "gelistirici", "tok-ayse": "ayse"}
 USERS = {
@@ -141,6 +152,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        if getattr(self, "_user", None):
+            self.send_header("X-AUSERNAME", self._user)
         self.end_headers()
         self.wfile.write(data)
 
@@ -159,9 +172,16 @@ class Handler(BaseHTTPRequestHandler):
         auth = self.headers.get("Authorization", "")
         token = auth[7:].strip() if auth.startswith("Bearer ") else None
         user = TOKENS.get(token)
+        self._user = user
         xat = "present" if self.headers.get("X-Atlassian-Token") else "absent"
         print("%s %s user=%s x-atlassian-token=%s" % (method, self.path, user or "-", xat), flush=True)
-        if not user and path != "/ci/trigger":  # the CI hook is a plain webhook, no Bitbucket auth
+        if CONTEXT and path != "/ci/trigger":
+            if path == CONTEXT or path.startswith(CONTEXT + "/"):
+                path = path[len(CONTEXT):] or "/"
+            else:  # outside the context path the reverse proxy has nothing to serve
+                self._user = None
+                return self.send(503, "Service Unavailable", "text/plain")
+        if not user and path not in AUTH_EXEMPT:
             return self.send(401, err("Authentication failed"))
         body = None
         if raw:
@@ -177,8 +197,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(500, err("Internal mock error: %r" % e))
 
     def route(self, method, path, qs, user, body, raw, port):
+        if method == "GET" and path in ("/rest/api/1.0/application-properties", "/rest/api/latest/application-properties"):
+            return self.send(200, {"version": "9.4.2", "buildNumber": "9004002", "buildDate": "1736803793767", "displayName": "Bitbucket"})
+
         if method == "GET" and path == "/plugins/servlet/applinks/whoami":
-            return self.send(200, user, "text/plain;charset=UTF-8")
+            # Data Center: empty for HTTP access tokens (the client must use X-AUSERNAME).
+            return self.send(200, "", "text/plain;charset=UTF-8")
 
         m = re.match(r"^/rest/api/1\.0/users/([^/]+)$", path)
         if method == "GET" and m:
@@ -301,9 +325,11 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         PORT = int(sys.argv[1])
+    if len(sys.argv) > 2:
+        CONTEXT = "/" + sys.argv[2].strip("/")
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     srv.daemon_threads = True
-    print("Mock Bitbucket listening on http://localhost:%d" % PORT, flush=True)
+    print("Mock Bitbucket listening on http://localhost:%d%s" % (PORT, CONTEXT), flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

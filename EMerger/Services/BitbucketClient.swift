@@ -45,14 +45,59 @@ struct BitbucketClient: Sendable {
 
     // MARK: Identity
 
-    /// The username behind the credential (plain text from the applinks servlet).
+    /// The username behind the credential.
+    ///
+    /// Every authenticated Bitbucket REST response carries an `X-AUSERNAME` header
+    /// (Atlassian convention), and a wrong token fails the call with 401 — so one
+    /// tiny dashboard request both validates the credential and names the user.
+    /// The applinks `whoami` servlet is only a fallback: on Data Center it returns
+    /// an **empty** body for HTTP access tokens (it honours sessions / Basic only).
     func whoami() async throws -> String {
+        let (_, http) = try await request(
+            "GET",
+            path: "\(Self.apiRoot)/dashboard/pull-requests",
+            query: [URLQueryItem(name: "limit", value: "1")]
+        )
+        if let header = http.value(forHTTPHeaderField: "X-AUSERNAME") {
+            let name = header.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty, name.lowercased() != "anonymous" { return name }
+        }
         let (data, _) = try await request("GET", path: "/plugins/servlet/applinks/whoami", accept: "text/plain")
         let name = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, !name.contains("<") else {
-            throw EMergerError.decoding("whoami boş veya HTML döndü (SSO yönlendirmesi olabilir)")
+            throw EMergerError.decoding("kullanıcı adı alınamadı (whoami boş veya HTML döndü). Kullanıcı adını elle yazabilirsiniz.")
         }
         return name
+    }
+
+    /// Locates the Bitbucket root behind `url`: the URL itself or a common context
+    /// path (`/bitbucket`, `/stash`). Corporate installs often serve Bitbucket under a
+    /// sub-path and answer 503 / 404 at the host root. Probes the unauthenticated
+    /// `application-properties` endpoint, which returns `{"version": …}` only from a
+    /// real Bitbucket. Returns `nil` when nothing answered.
+    static func detectBaseURL(from url: URL) async -> URL? {
+        var candidates = [url]
+        let path = url.path.lowercased()
+        for context in ["bitbucket", "stash"] where !path.hasSuffix("/" + context) {
+            candidates.append(url.appendingPathComponent(context))
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 10
+        config.httpAdditionalHeaders = ["Accept": "application/json", "User-Agent": "E-Merger/1.0 (macOS)"]
+        let session = URLSession(configuration: config)
+        for candidate in candidates {
+            guard var components = URLComponents(url: candidate, resolvingAgainstBaseURL: false) else { continue }
+            let base = components.path.hasSuffix("/") ? String(components.path.dropLast()) : components.path
+            components.path = base + "\(Self.apiRoot)/application-properties"
+            guard let probe = components.url,
+                  let (data, response) = try? await session.data(from: probe),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  object["version"] != nil
+            else { continue }
+            return candidate
+        }
+        return nil
     }
 
     func user(slug: String) async throws -> BBUser {

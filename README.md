@@ -54,9 +54,12 @@ yourself are unsigned; if Gatekeeper blocks one:
 ## Setup
 
 1. **Ayarlar › Hesaplar › Hesap ekle…** — label (e.g. *Müdür*), server URL, token.
-   Create the token in Bitbucket under *Manage account › HTTP access tokens* with
-   **Repository: Write** (approve/comment) — and **Repository: Admin** only if your
-   server requires it for merges. Press **Doğrula**, then **Kaydet**.
+   The server URL is the Bitbucket root as you see it in the browser, including a
+   context path if there is one (e.g. `https://git.example.com/bitbucket`);
+   **Doğrula** also finds `/bitbucket` and `/stash` on its own when the host root
+   answers 503. Create the token in Bitbucket under *Manage account › HTTP access
+   tokens* with **Repository: Write** (approve/comment) — and **Repository: Admin**
+   only if your server requires it for merges. Press **Doğrula**, then **Kaydet**.
 2. Repeat for the second identity (e.g. *Geliştirici*).
 3. Optional — **Depolar**: add `PROJECT/repo` entries whose *all* open PRs should be
    listed even when neither account is a participant.

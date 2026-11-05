@@ -60,9 +60,14 @@ Casks/e-merger.rb               Homebrew cask (auto-bumped by CI)
 ## Architecture
 
 - **Accounts**: `BitbucketAccount` = label + server URL + resolved username/slug.
-  `AccountEditorView` → "Doğrula" calls `GET /plugins/servlet/applinks/whoami`
-  (plain-text username) then `GET /rest/api/1.0/users/{slug}` to fill display name
-  and slug. Auth is `Bearer <HTTP access token>` or `Basic user:password`
+  `AccountEditorView` → "Doğrula" first runs `BitbucketClient.detectBaseURL`
+  (probes the entered URL, then `/bitbucket`, `/stash` via the public
+  `application-properties` endpoint — corporate installs answer 503 at the host
+  root), then `whoami()`: `GET …/dashboard/pull-requests?limit=1` and reads the
+  `X-AUSERNAME` response header (401 on a bad token; the applinks `whoami` servlet
+  is only a fallback because Data Center returns an empty body for HTTP access
+  tokens), then `GET /rest/api/1.0/users/{slug}` to fill display name and slug.
+  Auth is `Bearer <HTTP access token>` or `Basic user:password`
   (`BitbucketCredential.mode`).
 - **Listing**: `PullRequestStore.refresh()` fans out per enabled account:
   `GET /rest/api/1.0/dashboard/pull-requests?state=OPEN` (PRs the account authors /
@@ -100,8 +105,14 @@ Casks/e-merger.rb               Homebrew cask (auto-bumped by CI)
   stable. The harness therefore writes its own items and deletes them on exit.
 - `EMERGER_SUPPORT_DIR` overrides the Application Support directory (used by
   `scripts/e2e.sh` so tests never touch the real config). Don't remove it.
-- `whoami` may return HTML when a proxy/SSO intercepts the request; the client
-  treats any `<` in the response as a failure and the username can be typed by hand.
+- **Context path.** Bitbucket is often served under `https://host/bitbucket`; the
+  host root returns 503. Keep the path in `serverURL` (the client appends REST
+  paths to it) and keep `detectBaseURL` in the verify flow. The mock mirrors this
+  (`scripts/e2e.sh` starts it with `/bitbucket`).
+- **Identity.** The applinks `whoami` servlet returns an empty body for HTTP
+  access tokens on Data Center (verified on 9.4) and HTML behind SSO; the username
+  comes from `X-AUSERNAME` on any authenticated REST response. The field can still
+  be typed by hand.
 - `ATS`: only `NSAllowsLocalNetworking` is enabled (for the mock on localhost).
   Production servers must be HTTPS with a chain the Mac trusts.
 - Sparkle signing / bootstrap gotchas are the same as FlightKit's: sign the
