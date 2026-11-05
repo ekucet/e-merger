@@ -30,7 +30,6 @@ struct PullRequestDetailView: View {
     private var approvedWith: [BitbucketAccount] { item.accountsThatApproved(from: enabledAccounts) }
     private var mergeCandidates: [BitbucketAccount] { item.accountsThatCanMerge(from: enabledAccounts) }
     private var isBusy: Bool { prs.busy.contains(item.id) }
-    private var triggers: [CITrigger] { accounts.triggers(for: item.pr) }
 
     private var mergeAccount: BitbucketAccount? {
         mergeCandidates.first { $0.id == mergeAccountID } ?? prs.defaultMergeAccount(for: item)
@@ -43,7 +42,6 @@ struct PullRequestDetailView: View {
                 actions
                 metadata
                 reviewers
-                builds
                 mergeSection
                 if let description = item.pr.description, !description.isEmpty {
                     GroupBox("Açıklama") {
@@ -169,20 +167,6 @@ struct PullRequestDetailView: View {
                         .help("\(approver.label) onaylar, merge mümkün olunca \(mergeWith.label) merge eder.")
                     }
 
-                    if !triggers.isEmpty {
-                        Menu {
-                            ForEach(triggers) { trigger in
-                                Button(trigger.name) {
-                                    run { try await prs.triggerCI(item.id, trigger: trigger, with: mergeAccount) }
-                                }
-                            }
-                        } label: {
-                            Label("CI tetikle", systemImage: "play.circle")
-                        }
-                        .menuStyle(.borderedButton)
-                        .fixedSize()
-                    }
-
                     Button {
                         showComment = true
                     } label: {
@@ -269,35 +253,6 @@ struct PullRequestDetailView: View {
         }
     }
 
-    private var builds: some View {
-        GroupBox("CI / Build") {
-            VStack(alignment: .leading, spacing: 6) {
-                if item.buildStatuses.isEmpty {
-                    Text("Son commit için build durumu bildirilmemiş.").foregroundStyle(.secondary)
-                }
-                ForEach(item.buildStatuses, id: \.self) { build in
-                    HStack(spacing: 8) {
-                        Image(systemName: build.buildState.systemImage)
-                            .foregroundStyle(buildTint(build.buildState))
-                        if let urlText = build.url, let url = URL(string: urlText) {
-                            Link(build.shownName, destination: url)
-                        } else {
-                            Text(build.shownName)
-                        }
-                        if let description = build.description, !description.isEmpty {
-                            Text(description).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        Spacer()
-                        Text(build.buildState.title)
-                            .font(.caption)
-                            .foregroundStyle(buildTint(build.buildState))
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(4)
-        }
-    }
 
     private var mergeSection: some View {
         GroupBox {
@@ -409,15 +364,6 @@ struct PullRequestDetailView: View {
         case .approved: return .green
         case .unapproved: return .secondary
         case .needsWork: return .orange
-        }
-    }
-
-    private func buildTint(_ state: BBBuildState) -> Color {
-        switch state {
-        case .successful: return .green
-        case .failed: return .red
-        case .inProgress: return .orange
-        case .unknown: return .secondary
         }
     }
 

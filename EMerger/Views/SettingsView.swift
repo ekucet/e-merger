@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-/// Preferences window (⌘,): accounts, watched repositories, CI triggers, general.
+/// Preferences window (⌘,): accounts, watched repositories, release chains, general.
 @MainActor
 struct SettingsView: View {
     @Bindable var accounts: AccountStore
@@ -21,8 +21,6 @@ struct SettingsView: View {
                 .tabItem { Label("Depolar", systemImage: "folder") }
             ReleasePipelinesSettingsView(accounts: accounts)
                 .tabItem { Label("Yayın", systemImage: "shippingbox") }
-            CITriggersSettingsView(accounts: accounts)
-                .tabItem { Label("CI", systemImage: "play.circle") }
             GeneralSettingsView(accounts: accounts)
                 .tabItem { Label("Genel", systemImage: "gearshape") }
         }
@@ -161,144 +159,6 @@ struct WatchedReposSettingsView: View {
     }
 }
 
-// MARK: - CI triggers
-
-@MainActor
-struct CITriggersSettingsView: View {
-    @Bindable var accounts: AccountStore
-    @State private var editorTarget: TriggerEditorTarget?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Bir PR için CI'ı başlatan HTTP çağrısı (Jenkins `buildWithParameters`, Bamboo kuyruğu, webhook…). URL ve gövdede yer tutucular kullanılabilir: " + CITrigger.placeholders.joined(separator: " "))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            List {
-                ForEach(accounts.ciTriggers) { trigger in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text(trigger.name).bold()
-                                if !trigger.repoFilter.isEmpty {
-                                    Text(trigger.repoFilter)
-                                        .font(.caption2)
-                                        .padding(.horizontal, 5).padding(.vertical, 1)
-                                        .background(.quaternary, in: Capsule())
-                                }
-                            }
-                            Text("\(trigger.method) \(trigger.urlTemplate)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        Button("Düzenle") { editorTarget = TriggerEditorTarget(trigger: trigger) }
-                        Button(role: .destructive) {
-                            accounts.removeTrigger(id: trigger.id)
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                    }
-                }
-                if accounts.ciTriggers.isEmpty {
-                    Text("Tetikleyici yok — CI, Bitbucket'ın kendi webhook'larıyla başlıyorsa buna gerek yok.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(minHeight: 160)
-
-            HStack {
-                Button {
-                    editorTarget = TriggerEditorTarget(trigger: nil)
-                } label: {
-                    Label("Tetikleyici ekle…", systemImage: "plus")
-                }
-                Spacer()
-            }
-        }
-        .padding(20)
-        .sheet(item: $editorTarget) { target in
-            CITriggerEditorView(accounts: accounts, existing: target.trigger) {
-                editorTarget = nil
-            }
-        }
-    }
-}
-
-struct TriggerEditorTarget: Identifiable {
-    let id = UUID()
-    let trigger: CITrigger?
-}
-
-@MainActor
-struct CITriggerEditorView: View {
-    @Bindable var accounts: AccountStore
-    let existing: CITrigger?
-    let onDone: () -> Void
-
-    @State private var trigger: CITrigger
-    @State private var secret = ""
-    @State private var error: String?
-
-    init(accounts: AccountStore, existing: CITrigger?, onDone: @escaping () -> Void) {
-        self.accounts = accounts
-        self.existing = existing
-        self.onDone = onDone
-        _trigger = State(initialValue: existing ?? CITrigger(name: "", urlTemplate: ""))
-        if let existing, let saved = try? KeychainStore.loadCISecret(forTriggerID: existing.id) {
-            _secret = State(initialValue: saved)
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(existing == nil ? "Yeni CI tetikleyici" : "Tetikleyiciyi düzenle").font(.headline)
-            Form {
-                TextField("Ad", text: $trigger.name, prompt: Text("Jenkins iOS build"))
-                TextField("URL", text: $trigger.urlTemplate, prompt: Text("https://jenkins.example.com/job/ios/buildWithParameters?token=…&BRANCH={branch}"))
-                Picker("Yöntem", selection: $trigger.method) {
-                    ForEach(["POST", "GET", "PUT"], id: \.self) { Text($0).tag($0) }
-                }
-                TextField("Repo filtresi", text: $trigger.repoFilter, prompt: Text("Boş = tüm PR'lar; ya da MOB/ios-app"))
-                TextField("Content-Type", text: $trigger.contentType)
-                VStack(alignment: .leading) {
-                    Text("Gövde (opsiyonel)")
-                    TextEditor(text: $trigger.bodyTemplate)
-                        .font(.body.monospaced())
-                        .frame(height: 70)
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
-                }
-                TextField("Gizli başlık adı", text: $trigger.secretHeaderName, prompt: Text("Authorization"))
-                SecureField("Gizli başlık değeri (Keychain)", text: $secret, prompt: Text("Bearer … / Basic …"))
-            }
-            .formStyle(.grouped)
-
-            if let error {
-                Text(error).foregroundStyle(.red).font(.caption)
-            }
-
-            HStack {
-                Spacer()
-                Button("Vazgeç", action: onDone).keyboardShortcut(.cancelAction)
-                Button("Kaydet") {
-                    do {
-                        try accounts.upsert(trigger, secret: secret)
-                        onDone()
-                    } catch {
-                        self.error = error.localizedDescription
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(trigger.name.trimmingCharacters(in: .whitespaces).isEmpty || trigger.urlTemplate.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        }
-        .padding(20)
-        .frame(width: 560)
-    }
-}
-
 // MARK: - General
 
 @MainActor
@@ -308,7 +168,6 @@ struct GeneralSettingsView: View {
     @AppStorage(AppSettings.confirmMergeKey) private var confirmMerge = true
     @AppStorage(AppSettings.notifyNewApprovalsKey) private var notifyNewApprovals = true
     @AppStorage(AppSettings.preferredMergeAccountKey) private var preferredMergeAccount = ""
-    @AppStorage(AppSettings.triggerCIAfterApproveKey) private var triggerCIAfterApprove = false
 
     var body: some View {
         Form {
@@ -330,12 +189,6 @@ struct GeneralSettingsView: View {
                         Text(account.label).tag(account.id)
                     }
                 }
-            }
-            Section("CI") {
-                Toggle("Onayladıktan sonra uygun CI tetikleyicilerini çalıştır", isOn: $triggerCIAfterApprove)
-                Text("Bitbucket'ta CI onay/merge webhook'uyla zaten başlıyorsa kapalı bırak.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             Section("Veri") {
                 LabeledContent("Yapılandırma") {

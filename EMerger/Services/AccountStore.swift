@@ -8,21 +8,19 @@
 import Foundation
 import Observation
 
-/// Persisted configuration: the user's accounts, watched repositories and CI
-/// triggers — everything **except** secrets, which go through `KeychainStore`.
+/// Persisted configuration: the user's accounts, watched repositories and release
+/// chains — everything **except** secrets, which go through `KeychainStore`.
 /// Stored at `~/Library/Application Support/E-Merger/config.json`.
 @Observable
 @MainActor
 final class AccountStore {
     private(set) var accounts: [BitbucketAccount] = []
     private(set) var watchedRepos: [WatchedRepository] = []
-    private(set) var ciTriggers: [CITrigger] = []
     private(set) var releasePipelines: [ReleasePipeline] = []
 
     private struct Config: Codable {
         var accounts: [BitbucketAccount] = []
         var watchedRepos: [WatchedRepository] = []
-        var ciTriggers: [CITrigger] = []
         var releasePipelines: [ReleasePipeline] = []
 
         init() {}
@@ -33,7 +31,6 @@ final class AccountStore {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             accounts = try c.decodeIfPresent([BitbucketAccount].self, forKey: .accounts) ?? []
             watchedRepos = try c.decodeIfPresent([WatchedRepository].self, forKey: .watchedRepos) ?? []
-            ciTriggers = try c.decodeIfPresent([CITrigger].self, forKey: .ciTriggers) ?? []
             releasePipelines = try c.decodeIfPresent([ReleasePipeline].self, forKey: .releasePipelines) ?? []
         }
     }
@@ -113,30 +110,6 @@ final class AccountStore {
         save()
     }
 
-    // MARK: CI triggers
-
-    func upsert(_ trigger: CITrigger, secret: String?) throws {
-        if let secret {
-            try KeychainStore.saveCISecret(secret, forTriggerID: trigger.id)
-        }
-        if let idx = ciTriggers.firstIndex(where: { $0.id == trigger.id }) {
-            ciTriggers[idx] = trigger
-        } else {
-            ciTriggers.append(trigger)
-        }
-        save()
-    }
-
-    func removeTrigger(id: String) {
-        ciTriggers.removeAll { $0.id == id }
-        try? KeychainStore.deleteCISecret(forTriggerID: id)
-        save()
-    }
-
-    func triggers(for pr: BBPullRequest) -> [CITrigger] {
-        ciTriggers.filter { $0.applies(to: pr) }
-    }
-
     // MARK: Release pipelines
 
     func pipeline(id: String) -> ReleasePipeline? {
@@ -164,7 +137,6 @@ final class AccountStore {
         if let config = try? JSONDecoder().decode(Config.self, from: data) {
             accounts = config.accounts
             watchedRepos = config.watchedRepos
-            ciTriggers = config.ciTriggers
             releasePipelines = config.releasePipelines
         }
     }
@@ -177,7 +149,6 @@ final class AccountStore {
             var config = Config()
             config.accounts = accounts
             config.watchedRepos = watchedRepos
-            config.ciTriggers = ciTriggers
             config.releasePipelines = releasePipelines
             try encoder.encode(config).write(to: configURL, options: .atomic)
         } catch {

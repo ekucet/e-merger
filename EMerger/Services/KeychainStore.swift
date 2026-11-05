@@ -13,7 +13,6 @@ import Security
 /// config file, never exported by the app.
 enum KeychainStore {
     private static let credentialService = "com.emerger.bitbucket-credential"
-    private static let ciSecretService = "com.emerger.ci-trigger-secret"
 
     // MARK: Account credentials
 
@@ -29,25 +28,6 @@ enum KeychainStore {
 
     static func deleteCredential(forAccountID id: String) throws {
         try delete(service: credentialService, account: id)
-    }
-
-    // MARK: CI trigger secret header values
-
-    static func saveCISecret(_ value: String, forTriggerID id: String) throws {
-        if value.isEmpty {
-            try delete(service: ciSecretService, account: id)
-        } else {
-            try save(Data(value.utf8), service: ciSecretService, account: id)
-        }
-    }
-
-    static func loadCISecret(forTriggerID id: String) throws -> String? {
-        guard let data = try load(service: ciSecretService, account: id) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    static func deleteCISecret(forTriggerID id: String) throws {
-        try delete(service: ciSecretService, account: id)
     }
 
     // MARK: Primitives

@@ -179,43 +179,6 @@ struct BBMergeStatus: Codable, Hashable, Sendable {
     var vetoTexts: [String] { (vetoes ?? []).map(\.text) }
 }
 
-enum BBBuildState: String, Codable, Sendable {
-    case successful = "SUCCESSFUL"
-    case failed = "FAILED"
-    case inProgress = "INPROGRESS"
-    case unknown = "UNKNOWN"
-
-    var title: String {
-        switch self {
-        case .successful: return "Başarılı"
-        case .failed: return "Başarısız"
-        case .inProgress: return "Çalışıyor"
-        case .unknown: return "Bilinmiyor"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .successful: return "checkmark.seal.fill"
-        case .failed: return "xmark.octagon.fill"
-        case .inProgress: return "clock.fill"
-        case .unknown: return "questionmark.circle"
-        }
-    }
-}
-
-struct BBBuildStatus: Codable, Hashable, Sendable {
-    let state: String
-    let key: String?
-    let name: String?
-    let url: String?
-    let description: String?
-    let dateAdded: Int64?
-
-    var buildState: BBBuildState { BBBuildState(rawValue: state) ?? .unknown }
-    var shownName: String { name ?? key ?? "Build" }
-}
-
 struct BBComment: Codable, Hashable, Sendable {
     let id: Int
     let text: String?

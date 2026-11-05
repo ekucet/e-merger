@@ -9,7 +9,7 @@ import Foundation
 import Observation
 
 /// Aggregates open pull requests across all of the user's accounts and performs
-/// actions (approve / merge / comment / CI) with the account the user picks.
+/// actions (approve / merge / comment) with the account the user picks.
 /// Every action is recorded in `ActivityLog`.
 @Observable
 @MainActor
@@ -44,7 +44,7 @@ final class PullRequestStore {
     // MARK: Refresh
 
     /// Fetches every account's dashboard (+ watched repos), merges them by PR key
-    /// and refreshes build statuses. Safe to call while a refresh is running (no-op).
+    /// and keeps each PR's last merge status. Safe to call while a refresh is running (no-op).
     func refresh() async {
         guard !isRefreshing else { return }
         isRefreshing = true
@@ -139,39 +139,9 @@ final class PullRequestStore {
         for key in merged.keys {
             guard var item = merged[key] else { continue }
             item.relations = Self.relations(for: item.pr, accounts: enabled)
-            if let old = previous[key] {
-                item.buildStatuses = old.buildStatuses
-                if old.pr.version == item.pr.version { item.mergeStatus = old.mergeStatus }
+            if let old = previous[key], old.pr.version == item.pr.version {
+                item.mergeStatus = old.mergeStatus
             }
-            merged[key] = item
-        }
-
-        // Build statuses for every distinct head commit, via any account that sees the PR.
-        let commitJobs: [(commit: String, client: BitbucketClient)] = merged.values.compactMap { item in
-            guard let commit = item.pr.fromRef.latestCommit else { return nil }
-            for id in item.seenBy {
-                if let account = accounts.account(id: id), let client = try? accounts.client(for: account) {
-                    return (commit, client)
-                }
-            }
-            return nil
-        }
-        var statuses: [String: [BBBuildStatus]] = [:]
-        await withTaskGroup(of: (String, [BBBuildStatus]?).self) { group in
-            var seen = Set<String>()
-            for job in commitJobs where seen.insert(job.commit).inserted {
-                group.addTask {
-                    let result = try? await job.client.buildStatuses(commit: job.commit)
-                    return (job.commit, result)
-                }
-            }
-            for await (commit, result) in group {
-                if let result { statuses[commit] = result }
-            }
-        }
-        for key in merged.keys {
-            guard var item = merged[key], let commit = item.pr.fromRef.latestCommit, let list = statuses[commit] else { continue }
-            item.buildStatuses = list
             merged[key] = item
         }
 
@@ -231,9 +201,6 @@ final class PullRequestStore {
         try await refreshOne(key, via: account)
         if status == .approved {
             lastActionMessage = "\(account.label) onayladı: \(item.pr.title)"
-            if AppSettings.triggerCIAfterApprove {
-                await fireTriggers(for: key, with: account)
-            }
         }
     }
 
@@ -281,40 +248,6 @@ final class PullRequestStore {
             try await client.comment(project: pr.projectKey, repo: pr.repoSlug, id: pr.id, text: text)
         }
         try await refreshOne(key, via: account)
-    }
-
-    func triggerCI(_ key: String, trigger: CITrigger, with account: BitbucketAccount?) async throws {
-        guard let item = item(for: key) else { return }
-        let secret = try? KeychainStore.loadCISecret(forTriggerID: trigger.id)
-        let actor = account ?? actingAccount(for: item)
-        var detail = trigger.name
-        do {
-            let outcome = try await CITriggerRunner.fire(trigger, for: item.pr, secret: secret)
-            detail = "\(trigger.name) → HTTP \(outcome.status)"
-            log.record(ActivityEntry(
-                accountLabel: actor?.label ?? "—", username: actor?.username ?? "—",
-                action: "ci-trigger", prKey: key, prTitle: item.pr.title, success: true, detail: detail
-            ))
-            lastActionMessage = "CI tetiklendi: \(detail)"
-        } catch {
-            log.record(ActivityEntry(
-                accountLabel: actor?.label ?? "—", username: actor?.username ?? "—",
-                action: "ci-trigger", prKey: key, prTitle: item.pr.title, success: false,
-                detail: "\(detail): \(error.localizedDescription)"
-            ))
-            throw error
-        }
-    }
-
-    private func fireTriggers(for key: String, with account: BitbucketAccount) async {
-        guard let item = item(for: key) else { return }
-        for trigger in accounts.triggers(for: item.pr) {
-            do {
-                try await triggerCI(key, trigger: trigger, with: account)
-            } catch {
-                lastActionError = error.localizedDescription
-            }
-        }
     }
 
     /// Any account whose token sees the PR (for read-only calls).

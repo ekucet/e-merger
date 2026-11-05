@@ -18,7 +18,6 @@ enum EMergerError: LocalizedError, Sendable {
     case keychain(OSStatus)
     case network(String)
     case noActingAccount
-    case ciTriggerFailed(String)
     /// A PR is already open between the two branches (payload = that PR).
     case duplicatePullRequest(BBPullRequest)
     /// The two branches point at the same commit; nothing to merge.
@@ -49,8 +48,6 @@ enum EMergerError: LocalizedError, Sendable {
             return "Ağ hatası: \(detail)"
         case .noActingAccount:
             return "Bu işlemi yapabilecek bir hesap yok (PR'ın yazarı kendini onaylayamaz)."
-        case .ciTriggerFailed(let detail):
-            return "CI tetiklenemedi: \(detail)"
         case .duplicatePullRequest(let pr):
             return "Bu dallar arasında zaten açık bir PR var: #\(pr.id) \(pr.title)"
         case .emptyPullRequest(let detail):

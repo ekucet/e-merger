@@ -204,13 +204,6 @@ struct BitbucketClient: Sendable {
         try await getJSON(BBPullRequestSettings.self, path: repoPath(project, repo) + "/settings/pull-requests")
     }
 
-    // MARK: Builds
-
-    func buildStatuses(commit: String) async throws -> [BBBuildStatus] {
-        let (data, _) = try await request("GET", path: "/rest/build-status/1.0/commits/\(commit.pathEncoded)")
-        return try decode(BBPage<BBBuildStatus>.self, from: data).values
-    }
-
     // MARK: Internals
 
     private func repoPath(_ project: String, _ repo: String) -> String {

@@ -10,7 +10,6 @@ private let testConfig = """
     {"id": "acc-dev", "label": "Geliştirici", "serverURL": "http://localhost:7990/bitbucket", "username": "gelistirici", "displayName": "Ersel (Geliştirici)", "userSlug": "gelistirici", "isEnabled": true}
   ],
   "watchedRepos": [{"id": "wr-1", "projectKey": "CORE", "slug": "payments"}],
-  "ciTriggers": [{"id": "ci-1", "name": "Mock CI", "urlTemplate": "http://localhost:7990/ci/trigger?branch={branch}&pr={prId}", "method": "POST", "bodyTemplate": "{\\"repo\\":\\"{project}/{repo}\\",\\"commit\\":\\"{commit}\\"}", "contentType": "application/json", "secretHeaderName": "", "repoFilter": ""}],
   "releasePipelines": [{"id": "rp-1", "name": "ios-app", "projectKey": "MOB", "repoSlug": "ios-app", "sourceBranch": "dev", "stages": [{"id": "s1", "label": "TST", "branch": "release/tst"}, {"id": "s2", "label": "UAT", "branch": "release/uat"}, {"id": "s3", "label": "LIV", "branch": "release/liv"}], "strategyId": "ff-only", "starterAccountID": "acc-dev", "partnerAccountID": "acc-mudur", "addPartnerAsReviewer": true, "titleTemplate": "Release {stage}: {from} → {to}", "waitMinutes": 1}]
 }
 """
@@ -67,7 +66,7 @@ struct Harness {
                 let a = accounts.account(id: r.accountID)?.label ?? r.accountID
                 return "\(a):\(r.isAuthor ? "author" : r.isReviewer ? "reviewer" : "-")/\(r.status?.rawValue ?? "none")"
             }.sorted()
-            print("  \(item.id) v\(item.pr.version) \(item.pr.approvedCount)/\(item.pr.reviewers.count) build=\(item.overallBuild) seen=\(seen) \(rel)")
+            print("  \(item.id) v\(item.pr.version) \(item.pr.approvedCount)/\(item.pr.reviewers.count) seen=\(seen) \(rel)")
         }
         check("7 open PRs aggregated", store.items.count == 7, "\(store.items.count)")
         check("no account errors", store.accountErrors.isEmpty)
@@ -89,8 +88,6 @@ struct Harness {
             check("PR7 found via probe", false, store.items.map(\.id).joined(separator: ","))
         }
         check("PR1 seen by both accounts", store.item(for: pr1)?.seenBy.count == 2)
-        check("PR5 build failed", store.item(for: pr5)?.overallBuild == .failed)
-        check("PR3 build in progress", store.item(for: pr3)?.overallBuild == .inProgress)
 
         if let i1 = store.item(for: pr1) {
             let can = i1.accountsThatCanApprove(from: accounts.enabledAccounts).map(\.label)
@@ -189,16 +186,6 @@ struct Harness {
             try await store.comment(pr4, with: dev, text: "E-Merger harness yorumu")
             check("comment PR4", (store.item(for: pr4)?.pr.properties?.commentCount ?? 0) >= 1)
         } catch { check("comment PR4", false, error.localizedDescription) }
-
-        // CI trigger on PR1
-        if let trigger = accounts.ciTriggers.first {
-            do {
-                try await store.triggerCI(pr1, trigger: trigger, with: mudur)
-                check("CI trigger fired", true, store.lastActionMessage ?? "")
-            } catch { check("CI trigger fired", false, error.localizedDescription) }
-        } else {
-            check("CI trigger configured", false)
-        }
 
         // Activity log
         let actions = log.entries.prefix(12).map { "\($0.accountLabel):\($0.action):\($0.success ? "ok" : "fail")" }

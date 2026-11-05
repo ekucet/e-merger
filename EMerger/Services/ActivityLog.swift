@@ -15,7 +15,7 @@ struct ActivityEntry: Codable, Identifiable, Hashable, Sendable {
     /// Which of the user's accounts acted (label + username).
     var accountLabel: String
     var username: String
-    /// "approve", "unapprove", "needs-work", "merge", "comment", "ci-trigger"
+    /// "approve", "unapprove", "needs-work", "merge", "comment", "open-pr"
     var action: String
     var prKey: String
     var prTitle: String
@@ -29,7 +29,6 @@ struct ActivityEntry: Codable, Identifiable, Hashable, Sendable {
         case "needs-work": return "Düzeltme istedi"
         case "merge": return "Merge etti"
         case "comment": return "Yorum yazdı"
-        case "ci-trigger": return "CI tetikledi"
         case "open-pr": return "PR açtı"
         default: return action
         }

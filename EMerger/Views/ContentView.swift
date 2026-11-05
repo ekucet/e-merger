@@ -33,7 +33,7 @@ struct ContentView: View {
         case .awaitingMe:
             base = prs.items.filter { !$0.accountsThatCanApprove(from: enabled).isEmpty }
         case .ready:
-            base = prs.items.filter { $0.mergeStatus?.canMerge == true || ($0.pr.approvedCount > 0 && $0.overallBuild != .failed) }
+            base = prs.items.filter { $0.mergeStatus?.canMerge == true || $0.pr.approvedCount > 0 }
         case .mine:
             base = prs.items.filter(\.isAuthoredByAnyOfMine)
         }

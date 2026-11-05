@@ -2,8 +2,8 @@
 
 > Native macOS SwiftUI app that lists open **Bitbucket Server / Data Center** pull
 > requests across the user's **own** accounts (e.g. a "Müdür" and a "Geliştirici"
-> identity on the same server) and approves / merges / comments / triggers CI with
-> whichever of those accounts the user picks. Public, MIT, generic — **no
+> identity on the same server), approves / merges / comments with whichever of
+> those accounts the user picks, and promotes releases through a branch chain. Public, MIT, generic — **no
 > customer/bank-specific data belongs in this repo.**
 
 ## Hard rules
@@ -37,15 +37,15 @@ EMerger/
 ├── Models/                     BitbucketAccount (+ BitbucketCredential, WatchedRepository),
 │                               BitbucketModels (BB* wire types), PullRequestItem
 │                               (aggregated PR + per-account relation + filter enum),
-│                               CITrigger, AppSettings, EMergerError,
+│                               AppSettings, EMergerError,
 │                               ReleasePipeline (branch chain + stages + plan())
 ├── Services/                   KeychainStore, BitbucketClient (REST), AccountStore
 │                               (config.json), PullRequestStore (aggregate + actions),
-│                               ActivityLog (activity.jsonl), CITriggerRunner, Notifier,
+│                               ActivityLog (activity.jsonl), Notifier,
 │                               ReleaseRunner (runs a chain hop by hop)
 ├── Views/                      ContentView (split view), PullRequestListView,
 │                               PullRequestDetailView, SettingsView (+ Accounts /
-│                               Depolar / Yayın / CI / Genel tabs), AccountEditorView,
+│                               Depolar / Yayın / Genel tabs), AccountEditorView,
 │                               ActivityLogView, UpdaterView, ReleaseFlowView ("Yayına
 │                               al" sheet), ReleaseSettingsView (Yayın tab + editor)
 ├── Resources/Assets.xcassets   AppIcon (generated from SF Symbol), AccentColor
@@ -84,7 +84,6 @@ Casks/e-merger.rb               Homebrew cask (auto-bumped by CI)
   success adds the account to `seenBy` (and thus to the approve / merge buttons).
   Approving as a non-reviewer makes the account a PARTICIPANT, which Bitbucket's
   minimum-approvals check counts.
-  Build statuses come from `GET /rest/build-status/1.0/commits/{latestCommit}`.
   Merge status (`GET …/merge` → `canMerge` + vetoes) is fetched lazily when a PR is
   selected and after every action.
 - **Actions** (`PullRequestStore`): approve / unapprove / needs-work =
@@ -111,10 +110,9 @@ Casks/e-merger.rb               Homebrew cask (auto-bumped by CI)
   current call. The final stage asks for confirmation when `confirmMerge` is on.
   Chains are stored in `config.json` (`releasePipelines`); `Config` decodes with
   `decodeIfPresent` so older files never lose their accounts.
-- **CI**: `CITrigger` is a generic HTTP hook (URL/body templates with
-  `{project} {repo} {prId} {branch} {targetBranch} {commit} {title}`), optional
-  secret header in the Keychain, optional repo filter. Fired from the detail view
-  or automatically after approve (`AppSettings.triggerCIAfterApprove`).
+- **No CI.** By decision (2026-11-05) the app neither shows build statuses nor
+  triggers CI — it is only for approving, merging and promoting releases. Don't
+  add CI features back.
 - **Notifications**: after a refresh, PRs that newly need one of my approvals post a
   local `UNUserNotification` (`Notifier`), gated by `AppSettings.notifyNewApprovals`.
 - **Auto-update (Sparkle)**: identical to FlightKit — `UpdaterController` owns

@@ -123,9 +123,6 @@ struct PullRequestRow: View {
                     systemImage: "person.2",
                     tint: item.pr.approvedCount == 0 ? .secondary : .green
                 )
-                if item.overallBuild != .unknown {
-                    badge(text: item.overallBuild.title, systemImage: item.overallBuild.systemImage, tint: buildTint)
-                }
                 if item.mergeStatus?.conflicted == true {
                     badge(text: "Çakışma", systemImage: "exclamationmark.triangle", tint: .red)
                 } else if item.mergeStatus?.canMerge == true {
@@ -141,15 +138,6 @@ struct PullRequestRow: View {
             .font(.caption2)
         }
         .padding(.vertical, 3)
-    }
-
-    private var buildTint: Color {
-        switch item.overallBuild {
-        case .successful: return .green
-        case .failed: return .red
-        case .inProgress: return .orange
-        case .unknown: return .secondary
-        }
     }
 
     private func badge(text: String, systemImage: String, tint: Color) -> some View {

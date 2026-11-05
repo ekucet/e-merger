@@ -19,9 +19,9 @@ from urllib.parse import urlparse, parse_qs
 PORT = 7990
 CONTEXT = ""  # e.g. "/bitbucket"
 LOCK = threading.RLock()
-# Reachable without a Bitbucket token (the CI hook is a plain webhook; application-properties
-# is public on real servers and is what the app probes to find the context path).
-AUTH_EXEMPT = {"/ci/trigger", "/rest/api/1.0/application-properties", "/rest/api/latest/application-properties"}
+# Reachable without a Bitbucket token (application-properties is public on real servers
+# and is what the app probes to find the context path).
+AUTH_EXEMPT = {"/rest/api/1.0/application-properties", "/rest/api/latest/application-properties"}
 
 TOKENS = {"tok-mudur": "mudur", "tok-dev": "gelistirici", "tok-ayse": "ayse"}
 USERS = {
@@ -88,7 +88,6 @@ def participant(slug, role, approved=False):
 
 
 PRS = {}
-BUILD_BY_PR = {5: "FAILED", 3: "INPROGRESS"}
 CONFLICTED = {3}
 MIN_APPROVALS = {1: 2}
 
@@ -207,7 +206,7 @@ class Handler(BaseHTTPRequestHandler):
         self._user = user
         xat = "present" if self.headers.get("X-Atlassian-Token") else "absent"
         print("%s %s user=%s x-atlassian-token=%s" % (method, self.path, user or "-", xat), flush=True)
-        if CONTEXT and path != "/ci/trigger":
+        if CONTEXT:
             if path == CONTEXT or path.startswith(CONTEXT + "/"):
                 path = path[len(CONTEXT):] or "/"
             else:  # outside the context path the reverse proxy has nothing to serve
@@ -301,23 +300,6 @@ class Handler(BaseHTTPRequestHandler):
             if not pr or pr["_repo"] != (key, slug):
                 return self.send(404, err("Pull request %d does not exist in %s/%s." % (pid, key, slug)))
             return self.pr_route(method, sub, qs, user, body, pr, port)
-
-        m = re.match(r"^/rest/build-status/1\.0/commits/([^/]+)$", path)
-        if method == "GET" and m:
-            cid = m.group(1)
-            vals = []
-            for pid, pr in PRS.items():
-                if pr["fromRef"]["latestCommit"] == cid:
-                    st = BUILD_BY_PR.get(pid, "SUCCESSFUL")
-                    vals.append({"state": st, "key": "BUILD-%d" % pid, "name": "CI #%d" % (100 + pid),
-                                 "url": "http://localhost:%d/ci/builds/%d" % (port, pid),
-                                 "description": "Build %s" % st.lower(), "dateAdded": now_ms() - 600_000})
-            r = {"size": len(vals), "limit": 25, "isLastPage": True, "values": vals, "start": 0}
-            return self.send(200, r)
-
-        if method == "POST" and path == "/ci/trigger":
-            print("  CI trigger body: %s" % raw.decode("utf-8", "replace"), flush=True)
-            return self.send(201, {"queued": True})
 
         self.send(404, err("No such resource: %s %s" % (method, path)))
 

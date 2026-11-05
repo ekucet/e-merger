@@ -3,9 +3,10 @@
 A small, native **macOS app** for people who hold **more than one Bitbucket
 account** on the same server (for example a *manager* identity that approves and a
 *developer* identity that writes code). It lists every open pull request your
-accounts can see, shows who still has to approve and whether CI is green, and lets
-you **approve, merge, comment or trigger CI with the account you choose** — one
-window, one click, no juggling two machines or two browser profiles.
+accounts can see, shows who still has to approve and whether Bitbucket will let it
+merge, and lets you **approve, merge, comment or promote a release with the account
+you choose** — one window, one click, no juggling two machines or two browser
+profiles.
 
 > **Own accounts only.** E-Merger is a multi-account client for *your* identities,
 > like `gh auth switch` with a GUI. Tokens are stored in the macOS Keychain of the
@@ -19,8 +20,8 @@ window, one click, no juggling two machines or two browser profiles.
 - **One list for everything** — each account's dashboard (PRs you author / review)
   plus any repositories you choose to watch; merged, deduplicated, searchable, with
   filters *Tümü · Onayımı bekleyen · Merge'e hazır · Benim açtıklarım*.
-- **Per-PR detail** — reviewers and their status, latest-commit build results, merge
-  check with Bitbucket's vetoes (required approvals, conflicts, failed builds…).
+- **Per-PR detail** — reviewers and their status, merge check with Bitbucket's
+  vetoes (required approvals, conflicts…).
 - **Actions with the right account** — *Onayla · Müdür*, *Merge · Müdür*,
   *Onayla + Merge* (approve, wait until mergeable, merge), un-approve / needs-work,
   comment. The authoring account is never offered for approval (Bitbucket forbids
@@ -29,11 +30,8 @@ window, one click, no juggling two machines or two browser profiles.
   release/uat → release/liv`, or stops at the stage you pick. Every hop is a PR
   opened by one of your accounts and approved + fast-forward-merged by the other,
   roles alternating; up-to-date hops are skipped, an already-open PR is adopted,
-  merge checks (builds, approvals) are awaited, and each call is logged. Chains are
+  Bitbucket's merge checks are awaited, and each call is logged. Chains are
   defined once under *Ayarlar › Yayın* (repo, branches, strategy, the two accounts).
-- **CI trigger** — optional HTTP hook per repo (Jenkins `buildWithParameters`,
-  Bamboo, webhook) with `{branch}`, `{prId}`, `{commit}` … placeholders; can fire
-  automatically after approve.
 - **Notifications** when a PR newly needs one of your approvals; auto-refresh.
 - **Activity log** (⇧⌘L) — who did what, when.
 - **Auto-update** via Sparkle (notarized builds, asks before installing).
@@ -74,8 +72,6 @@ yourself are unsigned; if Gatekeeper blocks one:
    the first PR and the one that approves it). **Sunucuda doğrula** checks that the
    branches exist and the strategy is enabled. Then use the toolbar's **Yayına al**
    (⇧⌘R), pick the stage, press **Başlat**.
-5. Optional — **CI**: add a trigger if your pipeline is not already started by a
-   Bitbucket webhook on approve/merge.
 
 ## Build from source
 

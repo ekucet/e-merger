@@ -26,19 +26,9 @@ struct PullRequestItem: Identifiable, Hashable, Sendable {
     var seenBy: [String]
     /// Per-account relation, keyed on account id.
     var relations: [String: AccountRelation]
-    var buildStatuses: [BBBuildStatus] = []
     var mergeStatus: BBMergeStatus? = nil
 
     var repoDisplay: String { pr.toRef.repository.display }
-
-    /// Worst-case roll-up of the latest commit's build statuses.
-    var overallBuild: BBBuildState {
-        let states = buildStatuses.map(\.buildState)
-        if states.contains(.failed) { return .failed }
-        if states.contains(.inProgress) { return .inProgress }
-        if states.contains(.successful) { return .successful }
-        return .unknown
-    }
 
     /// Accounts that may approve: anyone who sees the PR and is not its author
     /// and has not approved yet.

@@ -23,9 +23,6 @@ enum AppSettings {
     /// Account id preferred for merges ("" = ask / first eligible).
     static let preferredMergeAccountKey = "EMerger.settings.preferredMergeAccount"
 
-    /// After approving, run the CI trigger(s) that apply to the PR.
-    static let triggerCIAfterApproveKey = "EMerger.settings.triggerCIAfterApprove"
-
     /// Remembered sidebar filter.
     static let filterKey = "EMerger.ui.filter"
 
@@ -43,9 +40,5 @@ enum AppSettings {
 
     static var preferredMergeAccount: String {
         UserDefaults.standard.string(forKey: preferredMergeAccountKey) ?? ""
-    }
-
-    static var triggerCIAfterApprove: Bool {
-        UserDefaults.standard.object(forKey: triggerCIAfterApproveKey) as? Bool ?? false
     }
 }
