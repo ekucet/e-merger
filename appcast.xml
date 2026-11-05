@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>E-Merger</title>
+    <link>https://github.com/ersel95/e-merger</link>
+    <description>E-Merger updates</description>
+    <item>
+      <title>E-Merger 1.0.0</title>
+      <pubDate>Thu, 05 Nov 2026 15:25:09 +0000</pubDate>
+      <sparkle:version>1.0.0</sparkle:version>
+      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/ersel95/e-merger/releases/tag/v1.0.0</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/ersel95/e-merger/releases/download/v1.0.0/E-Merger-1.0.0.dmg" length="3041505" type="application/octet-stream" sparkle:edSignature="Plg+h86cz9nI4Dn7ebs5PInUmz9xlz44RV+fA1fiIsZyROWY7vV4giRRlnNb9R6z7JdB1xszfM6YaB6jny8LBQ==" />
+    </item>
+  </channel>
+</rss>
