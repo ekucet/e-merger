@@ -1,0 +1,63 @@
+//
+//  EMergerApp.swift
+//  E-Merger
+//
+//  Created by Mr. t.
+//
+
+import SwiftUI
+
+@main
+@MainActor
+struct EMergerApp: App {
+    @State private var accounts: AccountStore
+    @State private var log: ActivityLog
+    @State private var prs: PullRequestStore
+    /// Sparkle auto-updater — checks the GitHub appcast on launch and offers any
+    /// newer notarized build (notify + confirm, never silent). See `UpdaterView`.
+    @StateObject private var updater = UpdaterController()
+    @Environment(\.openWindow) private var openWindow
+
+    init() {
+        let accounts = AccountStore()
+        let log = ActivityLog()
+        _accounts = State(initialValue: accounts)
+        _log = State(initialValue: log)
+        _prs = State(initialValue: PullRequestStore(accounts: accounts, log: log))
+    }
+
+    var body: some Scene {
+        WindowGroup("E-Merger") {
+            ContentView(accounts: accounts, prs: prs)
+                .frame(minWidth: 1040, minHeight: 640)
+        }
+        .windowStyle(.titleBar)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: updater.controller.updater)
+            }
+            CommandGroup(after: .toolbar) {
+                Button("Yenile") {
+                    Task { await prs.refresh() }
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(prs.isRefreshing)
+            }
+            CommandGroup(after: .windowList) {
+                Button("İşlem Günlüğü") {
+                    openWindow(id: "activity")
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+            }
+        }
+
+        Window("İşlem Günlüğü", id: "activity") {
+            ActivityLogView(log: log)
+                .frame(minWidth: 760, minHeight: 400)
+        }
+
+        Settings {
+            SettingsView(accounts: accounts, prs: prs)
+        }
+    }
+}

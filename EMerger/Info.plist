@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sparkle auto-update. The remaining Info.plist keys (CFBundle*, etc.) are
+	     synthesized by GENERATE_INFOPLIST_FILE and merged on top of this file. -->
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/ersel95/e-merger/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>0KKQj7e15TP4mEUcFzVITusqYYj+1NqvZfxAuOGhPUA=</string>
+	<!-- Check on launch + on a schedule, but never install without asking
+	     (notify + confirm). -->
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<!-- Bank Bitbucket servers are HTTPS; plain-HTTP is only allowed for
+	     local/LAN test servers (e.g. a mock on localhost). -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>
