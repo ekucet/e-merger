@@ -66,7 +66,9 @@ rm -f "$DMG"
 hdiutil create -volname "E-Merger" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
 
-# 4. Notarize + staple the DMG itself (clears the "downloaded" warning on the DMG).
+# 4. Sign, notarize + staple the DMG itself, so Gatekeeper accepts the disk image
+#    as well as the app inside (`spctl -a -t open` on the DMG passes).
+codesign --force --timestamp --sign "$SIGNING_IDENTITY" "$DMG"
 xcrun notarytool submit "$DMG" \
   --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait
 xcrun stapler staple "$DMG"
