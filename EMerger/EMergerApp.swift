@@ -13,6 +13,8 @@ struct EMergerApp: App {
     @State private var accounts: AccountStore
     @State private var log: ActivityLog
     @State private var prs: PullRequestStore
+    /// Runs "Yayına al" chains (dev → release/tst → …) one hop at a time.
+    @State private var releases: ReleaseRunner
     /// Sparkle auto-updater — checks the GitHub appcast on launch and offers any
     /// newer notarized build (notify + confirm, never silent). See `UpdaterView`.
     @StateObject private var updater = UpdaterController()
@@ -21,14 +23,16 @@ struct EMergerApp: App {
     init() {
         let accounts = AccountStore()
         let log = ActivityLog()
+        let prs = PullRequestStore(accounts: accounts, log: log)
         _accounts = State(initialValue: accounts)
         _log = State(initialValue: log)
-        _prs = State(initialValue: PullRequestStore(accounts: accounts, log: log))
+        _prs = State(initialValue: prs)
+        _releases = State(initialValue: ReleaseRunner(accounts: accounts, log: log, prs: prs))
     }
 
     var body: some Scene {
         WindowGroup("E-Merger") {
-            ContentView(accounts: accounts, prs: prs)
+            ContentView(accounts: accounts, prs: prs, releases: releases)
                 .frame(minWidth: 1040, minHeight: 640)
         }
         .windowStyle(.titleBar)

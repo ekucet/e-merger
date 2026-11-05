@@ -11,12 +11,14 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var accounts: AccountStore
     @Bindable var prs: PullRequestStore
+    let releases: ReleaseRunner
 
     @AppStorage(AppSettings.filterKey) private var filterRaw = PullRequestFilter.all.rawValue
     @AppStorage(AppSettings.refreshIntervalKey) private var refreshInterval = AppSettings.defaultRefreshInterval
     @State private var selectionID: String?
     @State private var searchText = ""
     @State private var showError = false
+    @State private var showRelease = false
 
     private var filter: PullRequestFilter {
         PullRequestFilter(rawValue: filterRaw) ?? .all
@@ -50,6 +52,15 @@ struct ContentView: View {
         prs.items.first { $0.id == selectionID }
     }
 
+    /// The release chain of the selected PR's repository, if one is configured.
+    private var pipelineForSelection: String? {
+        guard let item = selectedItem else { return nil }
+        return accounts.releasePipelines.first {
+            $0.projectKey.caseInsensitiveCompare(item.pr.projectKey) == .orderedSame
+                && $0.repoSlug.caseInsensitiveCompare(item.pr.repoSlug) == .orderedSame
+        }?.id
+    }
+
     var body: some View {
         NavigationSplitView {
             PullRequestListView(
@@ -79,6 +90,21 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
+                Button {
+                    showRelease = true
+                } label: {
+                    if releases.isRunning {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Yayın \(releases.progressText)")
+                        }
+                    } else {
+                        Label("Yayına al", systemImage: "shippingbox")
+                    }
+                }
+                .help("Yayına al — dev → release/tst → … (⇧⌘R)")
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(accounts.enabledAccounts.isEmpty)
                 Button {
                     Task { await prs.refresh() }
                 } label: {
@@ -110,6 +136,11 @@ struct ContentView: View {
             Button("Tamam") { prs.lastActionError = nil }
         } message: { message in
             Text(message)
+        }
+        .sheet(isPresented: $showRelease) {
+            ReleaseFlowView(accounts: accounts, runner: releases, initialPipelineID: pipelineForSelection) {
+                showRelease = false
+            }
         }
     }
 

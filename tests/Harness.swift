@@ -10,7 +10,8 @@ private let testConfig = """
     {"id": "acc-dev", "label": "Geliştirici", "serverURL": "http://localhost:7990/bitbucket", "username": "gelistirici", "displayName": "Ersel (Geliştirici)", "userSlug": "gelistirici", "isEnabled": true}
   ],
   "watchedRepos": [{"id": "wr-1", "projectKey": "CORE", "slug": "payments"}],
-  "ciTriggers": [{"id": "ci-1", "name": "Mock CI", "urlTemplate": "http://localhost:7990/ci/trigger?branch={branch}&pr={prId}", "method": "POST", "bodyTemplate": "{\\"repo\\":\\"{project}/{repo}\\",\\"commit\\":\\"{commit}\\"}", "contentType": "application/json", "secretHeaderName": "", "repoFilter": ""}]
+  "ciTriggers": [{"id": "ci-1", "name": "Mock CI", "urlTemplate": "http://localhost:7990/ci/trigger?branch={branch}&pr={prId}", "method": "POST", "bodyTemplate": "{\\"repo\\":\\"{project}/{repo}\\",\\"commit\\":\\"{commit}\\"}", "contentType": "application/json", "secretHeaderName": "", "repoFilter": ""}],
+  "releasePipelines": [{"id": "rp-1", "name": "ios-app", "projectKey": "MOB", "repoSlug": "ios-app", "sourceBranch": "dev", "stages": [{"id": "s1", "label": "TST", "branch": "release/tst"}, {"id": "s2", "label": "UAT", "branch": "release/uat"}, {"id": "s3", "label": "LIV", "branch": "release/liv"}], "strategyId": "ff-only", "starterAccountID": "acc-dev", "partnerAccountID": "acc-mudur", "addPartnerAsReviewer": true, "titleTemplate": "Release {stage}: {from} → {to}", "waitMinutes": 1}]
 }
 """
 
@@ -205,6 +206,73 @@ struct Harness {
         check("log has approve by Müdür", log.entries.contains { $0.action == "approve" && $0.accountLabel == "Müdür" && $0.success })
         check("log has merge by Müdür", log.entries.contains { $0.action == "merge" && $0.accountLabel == "Müdür" && $0.success })
         check("log has failed self-approve by Geliştirici", log.entries.contains { $0.action == "approve" && $0.accountLabel == "Geliştirici" && !$0.success })
+
+        // ── Release flow: dev → release/tst → release/uat → release/liv ──────────
+        let runner = ReleaseRunner(accounts: accounts, log: log, prs: store)
+        runner.pollInterval = .milliseconds(100)
+        let pipeline = accounts.releasePipelines.first!
+        let roles = pipeline.plan(upTo: 2).map { "\($0.openerAccountID)>\($0.approverAccountID)" }
+        check("plan alternates opener/approver", roles == ["acc-dev>acc-mudur", "acc-mudur>acc-dev", "acc-dev>acc-mudur"], roles.joined(separator: " "))
+        let devClient = try! accounts.client(for: dev)
+        func head(_ name: String) async -> String {
+            (try? await devClient.branch(project: "MOB", repo: "ios-app", name: name))?.latestCommit ?? "?"
+        }
+        func mockCommit(_ branch: String) async {
+            var req = URLRequest(url: URL(string: "http://localhost:7990/bitbucket/mock/commit")!)
+            req.httpMethod = "POST"
+            req.setValue("Bearer tok-dev", forHTTPHeaderField: "Authorization")
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try! JSONSerialization.data(withJSONObject: ["project": "MOB", "repo": "ios-app", "branch": branch])
+            _ = try? await URLSession.shared.data(for: req)
+        }
+        func statuses() -> String { runner.steps.map { "\($0.step.toBranch): \($0.status)" }.joined(separator: " | ") }
+        let settings = try? await devClient.pullRequestSettings(project: "MOB", repo: "ios-app")
+        check("repo settings list enabled strategies", settings?.enabledStrategyIDs?.contains("ff-only") == true)
+
+        let before = log.entries.count
+        let toLive = await runner.run(pipeline, upTo: 2)
+        check("release to LIV succeeded", toLive == .success, "\(toLive) — \(statuses())")
+        check("all 3 hops done", runner.steps.allSatisfy { if case .done = $0.status { return true } else { return false } }, statuses())
+        let devHead = await head("dev")
+        let tst = await head("release/tst"), uat = await head("release/uat"), liv = await head("release/liv")
+        check("tst/uat/liv fast-forwarded to dev head", tst == devHead && uat == devHead && liv == devHead)
+        let sequence = log.entries.prefix(log.entries.count - before).reversed().map { "\($0.accountLabel):\($0.action)" }
+        check("roles alternated per hop (dev opens, müdür approves+merges, then swap)",
+              sequence == ["Geliştirici:open-pr", "Müdür:approve", "Müdür:merge",
+                           "Müdür:open-pr", "Geliştirici:approve", "Geliştirici:merge",
+                           "Geliştirici:open-pr", "Müdür:approve", "Müdür:merge"],
+              sequence.joined(separator: ", "))
+        check("release PRs merged (none left open)", !store.items.contains { $0.pr.toRef.branchName.hasPrefix("release/") })
+
+        let again = await runner.run(pipeline, upTo: 1)
+        check("re-run skips up-to-date hops", again == .success && runner.steps.allSatisfy { if case .skipped = $0.status { return true } else { return false } }, statuses())
+
+        // An open PR between the branches is adopted; its author cannot approve → the other account acts.
+        await mockCommit("dev")
+        let manual = try? await (try! accounts.client(for: mudur)).createPullRequest(
+            project: "MOB", repo: "ios-app", title: "manual dev → tst", description: "",
+            fromBranch: "dev", toBranch: "release/tst", reviewers: []
+        )
+        check("manual PR opened by Müdür", manual != nil)
+        let adopted = await runner.run(pipeline, upTo: 0)
+        check("existing PR adopted and merged", adopted == .success && runner.steps.first?.pullRequestID == manual?.id, statuses())
+        check("Geliştirici approved + merged the PR Müdür authored", log.entries.first?.action == "merge" && log.entries.first?.accountLabel == "Geliştirici", "\(log.entries.first?.accountLabel ?? "-"):\(log.entries.first?.action ?? "-")")
+
+        // Diverged target: ff-only must be refused and the run must stop there.
+        await mockCommit("dev")
+        await mockCommit("release/uat")
+        let diverged = await runner.run(pipeline, upTo: 1)
+        if case .failed(let message) = diverged {
+            check("ff-only refused on diverged release/uat", message.localizedCaseInsensitiveContains("fast-forward"), message)
+        } else {
+            check("ff-only refused on diverged release/uat", false, "\(diverged)")
+        }
+        let firstDoneSecondFailed: Bool = {
+            guard runner.steps.count == 2 else { return false }
+            if case .done = runner.steps[0].status, case .failed = runner.steps[1].status { return true }
+            return false
+        }()
+        check("first hop done, second hop failed", firstDoneSecondFailed, statuses())
 
         // Wrong token → unauthorized surfaced per account
         var bad = mudur

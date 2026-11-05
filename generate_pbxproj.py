@@ -26,6 +26,7 @@ SOURCES = [
     ("Models/CITrigger.swift", "Models"),
     ("Models/AppSettings.swift", "Models"),
     ("Models/EMergerError.swift", "Models"),
+    ("Models/ReleasePipeline.swift", "Models"),
     ("Services/KeychainStore.swift", "Services"),
     ("Services/BitbucketClient.swift", "Services"),
     ("Services/AccountStore.swift", "Services"),
@@ -33,12 +34,15 @@ SOURCES = [
     ("Services/ActivityLog.swift", "Services"),
     ("Services/CITriggerRunner.swift", "Services"),
     ("Services/Notifier.swift", "Services"),
+    ("Services/ReleaseRunner.swift", "Services"),
     ("Views/ContentView.swift", "Views"),
     ("Views/PullRequestListView.swift", "Views"),
     ("Views/PullRequestDetailView.swift", "Views"),
     ("Views/SettingsView.swift", "Views"),
     ("Views/AccountEditorView.swift", "Views"),
     ("Views/ActivityLogView.swift", "Views"),
+    ("Views/ReleaseFlowView.swift", "Views"),
+    ("Views/ReleaseSettingsView.swift", "Views"),
     ("Views/UpdaterView.swift", "Views"),
 ]
 RESOURCES = [

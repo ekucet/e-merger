@@ -130,9 +130,12 @@ struct BitbucketClient: Sendable {
     }
 
     /// Merge; `version` is Bitbucket's optimistic lock (the PR's current `version`).
-    func merge(project: String, repo: String, id: Int, version: Int, message: String? = nil) async throws -> BBPullRequest {
+    /// `strategyId` (`ff-only`, `ff`, `no-ff`, `squash`…) must be enabled on the
+    /// repository; `nil` uses the repository default.
+    func merge(project: String, repo: String, id: Int, version: Int, message: String? = nil, strategyId: String? = nil) async throws -> BBPullRequest {
         var body: [String: Any] = ["version": version]
         if let message, !message.isEmpty { body["message"] = message }
+        if let strategyId, !strategyId.isEmpty { body["strategyId"] = strategyId }
         let data = try await requestJSON(
             "POST",
             path: prPath(project, repo, id) + "/merge",
@@ -159,6 +162,48 @@ struct BitbucketClient: Sendable {
         return try decode(BBComment.self, from: data)
     }
 
+    /// Opens a PR between two branches of the same repository. A PR that already
+    /// exists between them surfaces as `.duplicatePullRequest(existing)`; identical
+    /// heads as `.emptyPullRequest`.
+    func createPullRequest(
+        project: String, repo: String,
+        title: String, description: String,
+        fromBranch: String, toBranch: String,
+        reviewers: [String]
+    ) async throws -> BBPullRequest {
+        func refID(_ branch: String) -> String { branch.hasPrefix("refs/") ? branch : "refs/heads/\(branch)" }
+        let repository: [String: Any] = ["slug": repo, "project": ["key": project]]
+        var body: [String: Any] = [
+            "title": title,
+            "description": description,
+            "state": "OPEN", "open": true, "closed": false,
+            "fromRef": ["id": refID(fromBranch), "repository": repository],
+            "toRef": ["id": refID(toBranch), "repository": repository],
+        ]
+        if !reviewers.isEmpty {
+            body["reviewers"] = reviewers.map { ["user": ["name": $0]] }
+        }
+        let data = try await requestJSON("POST", path: repoPath(project, repo) + "/pull-requests", body: body)
+        return try decode(BBPullRequest.self, from: data)
+    }
+
+    // MARK: Branches & repository settings
+
+    /// The branch named exactly `name`, or `nil` when the repository has none.
+    func branch(project: String, repo: String, name: String) async throws -> BBBranch? {
+        let page = try await getJSON(
+            BBPage<BBBranch>.self,
+            path: repoPath(project, repo) + "/branches",
+            query: [URLQueryItem(name: "filterText", value: name), URLQueryItem(name: "limit", value: "100")]
+        )
+        return page.values.first { $0.name == name }
+    }
+
+    /// Merge strategies and approval rules of a repository.
+    func pullRequestSettings(project: String, repo: String) async throws -> BBPullRequestSettings {
+        try await getJSON(BBPullRequestSettings.self, path: repoPath(project, repo) + "/settings/pull-requests")
+    }
+
     // MARK: Builds
 
     func buildStatuses(commit: String) async throws -> [BBBuildStatus] {
@@ -168,8 +213,12 @@ struct BitbucketClient: Sendable {
 
     // MARK: Internals
 
+    private func repoPath(_ project: String, _ repo: String) -> String {
+        "\(Self.apiRoot)/projects/\(project.pathEncoded)/repos/\(repo.pathEncoded)"
+    }
+
     private func prPath(_ project: String, _ repo: String, _ id: Int) -> String {
-        "\(Self.apiRoot)/projects/\(project.pathEncoded)/repos/\(repo.pathEncoded)/pull-requests/\(id)"
+        repoPath(project, repo) + "/pull-requests/\(id)"
     }
 
     private func paged<T: Decodable & Sendable>(path: String, query: [URLQueryItem]) async throws -> [T] {
@@ -246,6 +295,13 @@ struct BitbucketClient: Sendable {
         if let envelope = try? JSONDecoder().decode(BBErrorEnvelope.self, from: data), let first = envelope.errors.first {
             if let vetoes = first.vetoes, !vetoes.isEmpty {
                 return .vetoed(vetoes.map(\.text))
+            }
+            let exception = first.exceptionName ?? ""
+            if exception.hasSuffix("DuplicatePullRequestException"), let existing = first.existingPullRequest {
+                return .duplicatePullRequest(existing)
+            }
+            if exception.hasSuffix("EmptyPullRequestException") || (first.message ?? "").localizedCaseInsensitiveContains("up-to-date") {
+                return .emptyPullRequest(first.message ?? "Dallar arasında değişiklik yok")
             }
             if status == 409, first.currentVersion != nil || (first.message ?? "").localizedCaseInsensitiveContains("out-of-date") {
                 return .outOfDate(currentVersion: first.currentVersion)

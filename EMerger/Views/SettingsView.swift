@@ -19,6 +19,8 @@ struct SettingsView: View {
                 .tabItem { Label("Hesaplar", systemImage: "person.2") }
             WatchedReposSettingsView(accounts: accounts)
                 .tabItem { Label("Depolar", systemImage: "folder") }
+            ReleasePipelinesSettingsView(accounts: accounts)
+                .tabItem { Label("Yayın", systemImage: "shippingbox") }
             CITriggersSettingsView(accounts: accounts)
                 .tabItem { Label("CI", systemImage: "play.circle") }
             GeneralSettingsView(accounts: accounts)

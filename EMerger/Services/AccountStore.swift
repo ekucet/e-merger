@@ -17,11 +17,25 @@ final class AccountStore {
     private(set) var accounts: [BitbucketAccount] = []
     private(set) var watchedRepos: [WatchedRepository] = []
     private(set) var ciTriggers: [CITrigger] = []
+    private(set) var releasePipelines: [ReleasePipeline] = []
 
     private struct Config: Codable {
         var accounts: [BitbucketAccount] = []
         var watchedRepos: [WatchedRepository] = []
         var ciTriggers: [CITrigger] = []
+        var releasePipelines: [ReleasePipeline] = []
+
+        init() {}
+
+        /// Keys added in later versions may be missing from an older file; never
+        /// let that wipe the user's accounts.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            accounts = try c.decodeIfPresent([BitbucketAccount].self, forKey: .accounts) ?? []
+            watchedRepos = try c.decodeIfPresent([WatchedRepository].self, forKey: .watchedRepos) ?? []
+            ciTriggers = try c.decodeIfPresent([CITrigger].self, forKey: .ciTriggers) ?? []
+            releasePipelines = try c.decodeIfPresent([ReleasePipeline].self, forKey: .releasePipelines) ?? []
+        }
     }
 
     /// `~/Library/Application Support/E-Merger`, or `$EMERGER_SUPPORT_DIR` when set
@@ -123,6 +137,26 @@ final class AccountStore {
         ciTriggers.filter { $0.applies(to: pr) }
     }
 
+    // MARK: Release pipelines
+
+    func pipeline(id: String) -> ReleasePipeline? {
+        releasePipelines.first { $0.id == id }
+    }
+
+    func upsert(_ pipeline: ReleasePipeline) {
+        if let idx = releasePipelines.firstIndex(where: { $0.id == pipeline.id }) {
+            releasePipelines[idx] = pipeline
+        } else {
+            releasePipelines.append(pipeline)
+        }
+        save()
+    }
+
+    func removePipeline(id: String) {
+        releasePipelines.removeAll { $0.id == id }
+        save()
+    }
+
     // MARK: Persistence
 
     private func load() {
@@ -131,6 +165,7 @@ final class AccountStore {
             accounts = config.accounts
             watchedRepos = config.watchedRepos
             ciTriggers = config.ciTriggers
+            releasePipelines = config.releasePipelines
         }
     }
 
@@ -139,7 +174,11 @@ final class AccountStore {
             try FileManager.default.createDirectory(at: Self.supportDirectory, withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let config = Config(accounts: accounts, watchedRepos: watchedRepos, ciTriggers: ciTriggers)
+            var config = Config()
+            config.accounts = accounts
+            config.watchedRepos = watchedRepos
+            config.ciTriggers = ciTriggers
+            config.releasePipelines = releasePipelines
             try encoder.encode(config).write(to: configURL, options: .atomic)
         } catch {
             NSLog("E-Merger: config kaydedilemedi: \(error.localizedDescription)")

@@ -30,6 +30,7 @@ struct ActivityEntry: Codable, Identifiable, Hashable, Sendable {
         case "merge": return "Merge etti"
         case "comment": return "Yorum yazdı"
         case "ci-trigger": return "CI tetikledi"
+        case "open-pr": return "PR açtı"
         default: return action
         }
     }

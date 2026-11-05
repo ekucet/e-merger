@@ -25,6 +25,12 @@ window, one click, no juggling two machines or two browser profiles.
   *Onayla + Merge* (approve, wait until mergeable, merge), un-approve / needs-work,
   comment. The authoring account is never offered for approval (Bitbucket forbids
   it anyway).
+- **Yayına al (release flow)** — one click promotes `dev → release/tst →
+  release/uat → release/liv`, or stops at the stage you pick. Every hop is a PR
+  opened by one of your accounts and approved + fast-forward-merged by the other,
+  roles alternating; up-to-date hops are skipped, an already-open PR is adopted,
+  merge checks (builds, approvals) are awaited, and each call is logged. Chains are
+  defined once under *Ayarlar › Yayın* (repo, branches, strategy, the two accounts).
 - **CI trigger** — optional HTTP hook per repo (Jenkins `buildWithParameters`,
   Bamboo, webhook) with `{branch}`, `{prId}`, `{commit}` … placeholders; can fire
   automatically after approve.
@@ -63,7 +69,12 @@ yourself are unsigned; if Gatekeeper blocks one:
 2. Repeat for the second identity (e.g. *Geliştirici*).
 3. Optional — **Depolar**: add `PROJECT/repo` entries whose *all* open PRs should be
    listed even when neither account is a participant.
-4. Optional — **CI**: add a trigger if your pipeline is not already started by a
+4. Optional — **Yayın**: add a release chain (repo, `dev` + stages such as
+   `release/tst`, `release/uat`, `release/liv`, merge strategy, the account that opens
+   the first PR and the one that approves it). **Sunucuda doğrula** checks that the
+   branches exist and the strategy is enabled. Then use the toolbar's **Yayına al**
+   (⇧⌘R), pick the stage, press **Başlat**.
+5. Optional — **CI**: add a trigger if your pipeline is not already started by a
    Bitbucket webhook on approve/merge.
 
 ## Build from source

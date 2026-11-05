@@ -221,6 +221,35 @@ struct BBComment: Codable, Hashable, Sendable {
     let text: String?
 }
 
+struct BBBranch: Decodable, Hashable, Sendable {
+    let id: String
+    let displayId: String?
+    let latestCommit: String?
+    let isDefault: Bool?
+
+    var name: String { displayId ?? id.replacingOccurrences(of: "refs/heads/", with: "") }
+}
+
+/// `GET …/settings/pull-requests`: merge strategies and approval rules of a repository.
+struct BBPullRequestSettings: Decodable, Sendable {
+    struct Strategy: Decodable, Sendable {
+        let id: String
+        let name: String?
+        let enabled: Bool?
+    }
+    struct MergeConfig: Decodable, Sendable {
+        let defaultStrategy: Strategy?
+        let strategies: [Strategy]?
+    }
+    let mergeConfig: MergeConfig?
+    let requiredApprovers: Int?
+    let requiredSuccessfulBuilds: Int?
+
+    var enabledStrategyIDs: [String]? {
+        mergeConfig?.strategies?.filter { $0.enabled == true }.map(\.id)
+    }
+}
+
 /// Bitbucket's error envelope: `{"errors":[{"message":…, "currentVersion":…, "vetoes":[…]}]}`.
 struct BBErrorEnvelope: Decodable, Sendable {
     struct Item: Decodable, Sendable {
@@ -229,6 +258,23 @@ struct BBErrorEnvelope: Decodable, Sendable {
         let currentVersion: Int?
         let expectedVersion: Int?
         let vetoes: [BBVeto]?
+        /// Sent with `DuplicatePullRequestException`: the PR already open between the branches.
+        let existingPullRequest: BBPullRequest?
+
+        private enum CodingKeys: String, CodingKey {
+            case message, exceptionName, currentVersion, expectedVersion, vetoes, existingPullRequest
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            message = try c.decodeIfPresent(String.self, forKey: .message)
+            exceptionName = try c.decodeIfPresent(String.self, forKey: .exceptionName)
+            currentVersion = try c.decodeIfPresent(Int.self, forKey: .currentVersion)
+            expectedVersion = try c.decodeIfPresent(Int.self, forKey: .expectedVersion)
+            vetoes = try c.decodeIfPresent([BBVeto].self, forKey: .vetoes)
+            // Never let an unexpected PR shape hide the actual error message.
+            existingPullRequest = try? c.decodeIfPresent(BBPullRequest.self, forKey: .existingPullRequest)
+        }
     }
     let errors: [Item]
 }

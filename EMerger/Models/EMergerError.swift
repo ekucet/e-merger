@@ -19,6 +19,12 @@ enum EMergerError: LocalizedError, Sendable {
     case network(String)
     case noActingAccount
     case ciTriggerFailed(String)
+    /// A PR is already open between the two branches (payload = that PR).
+    case duplicatePullRequest(BBPullRequest)
+    /// The two branches point at the same commit; nothing to merge.
+    case emptyPullRequest(String)
+    /// Release-flow condition explained in `message` (missing branch, timeout…).
+    case release(String)
 
     var errorDescription: String? {
         switch self {
@@ -45,6 +51,12 @@ enum EMergerError: LocalizedError, Sendable {
             return "Bu işlemi yapabilecek bir hesap yok (PR'ın yazarı kendini onaylayamaz)."
         case .ciTriggerFailed(let detail):
             return "CI tetiklenemedi: \(detail)"
+        case .duplicatePullRequest(let pr):
+            return "Bu dallar arasında zaten açık bir PR var: #\(pr.id) \(pr.title)"
+        case .emptyPullRequest(let detail):
+            return "Değişiklik yok: \(detail)"
+        case .release(let detail):
+            return detail
         }
     }
 }

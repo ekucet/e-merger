@@ -37,14 +37,17 @@ EMerger/
 ├── Models/                     BitbucketAccount (+ BitbucketCredential, WatchedRepository),
 │                               BitbucketModels (BB* wire types), PullRequestItem
 │                               (aggregated PR + per-account relation + filter enum),
-│                               CITrigger, AppSettings, EMergerError
+│                               CITrigger, AppSettings, EMergerError,
+│                               ReleasePipeline (branch chain + stages + plan())
 ├── Services/                   KeychainStore, BitbucketClient (REST), AccountStore
 │                               (config.json), PullRequestStore (aggregate + actions),
-│                               ActivityLog (activity.jsonl), CITriggerRunner, Notifier
+│                               ActivityLog (activity.jsonl), CITriggerRunner, Notifier,
+│                               ReleaseRunner (runs a chain hop by hop)
 ├── Views/                      ContentView (split view), PullRequestListView,
 │                               PullRequestDetailView, SettingsView (+ Accounts /
-│                               Depolar / CI / Genel tabs), AccountEditorView,
-│                               ActivityLogView, UpdaterView
+│                               Depolar / Yayın / CI / Genel tabs), AccountEditorView,
+│                               ActivityLogView, UpdaterView, ReleaseFlowView ("Yayına
+│                               al" sheet), ReleaseSettingsView (Yayın tab + editor)
 ├── Resources/Assets.xcassets   AppIcon (generated from SF Symbol), AccentColor
 ├── Info.plist                  Sparkle keys + ATS (local networking only)
 └── EMerger.entitlements        unsandboxed, network client
@@ -92,6 +95,22 @@ Casks/e-merger.rb               Homebrew cask (auto-bumped by CI)
   to `.vetoed`). "Onayla + Merge" approves with one account, polls `canMerge`
   (≤8 × 1.5 s), then merges with the chosen merge account. Comment =
   `POST …/comments`. Every mutating call carries `X-Atlassian-Token: no-check`.
+- **Release flow ("Yayına al", ⇧⌘R)**: `ReleasePipeline` = repo + source branch +
+  ordered stages (`dev → release/tst → release/uat → release/liv`) + merge strategy
+  (`ff-only` default) + two accounts. `plan(upTo:)` yields one `ReleaseStep` per hop
+  with opener/approver **alternating** from the starter account (the author can never
+  approve). `ReleaseRunner.run` executes hops in order: compare branch heads
+  (`GET …/branches?filterText=`; equal → skipped) → `POST …/pull-requests` with the
+  opener (409 `DuplicatePullRequestException` → adopt `existingPullRequest`, and if
+  its author is the would-be approver the other account acts; 409
+  `EmptyPullRequestException` → skipped) → approve with the partner → poll
+  `GET …/merge` every 5 s until `canMerge` (conflict → fail; approval-only vetoes
+  after 3 polls → fail; `waitMinutes` timeout) → `POST …/merge` with `strategyId`
+  (409 out-of-date → re-read + retry once). Every call is logged (`open-pr`,
+  `approve`, `merge`). A run survives closing the sheet; `cancel()` stops after the
+  current call. The final stage asks for confirmation when `confirmMerge` is on.
+  Chains are stored in `config.json` (`releasePipelines`); `Config` decodes with
+  `decodeIfPresent` so older files never lose their accounts.
 - **CI**: `CITrigger` is a generic HTTP hook (URL/body templates with
   `{project} {repo} {prId} {branch} {targetBranch} {commit} {title}`), optional
   secret header in the Keychain, optional repo filter. Fired from the detail view

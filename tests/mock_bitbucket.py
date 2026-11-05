@@ -39,6 +39,34 @@ REPOS = {("MOB", "ios-app"): {"slug": "ios-app", "id": 100, "name": "ios-app"},
          ("CORE", "payments"): {"slug": "payments", "id": 102, "name": "payments"}}
 
 
+
+
+def sha(name):
+    return hashlib.sha1(name.encode()).hexdigest()
+
+
+# Release chain of MOB/ios-app: dev is one commit ahead of release/tst, which is one
+# ahead of release/uat and release/liv. Each branch is its linear history (oldest
+# first); a fast-forward is possible only when the target head is in the source's
+# history. Mutated by merges and by the test-only POST /mock/commit.
+BRANCHES = {
+    ("MOB", "ios-app"): {
+        "dev": [sha("c1"), sha("c2"), sha("c3")],
+        "release/tst": [sha("c1"), sha("c2")],
+        "release/uat": [sha("c1")],
+        "release/liv": [sha("c1")],
+    },
+}
+ENABLED_STRATEGIES = ["no-ff", "ff", "ff-only"]
+ALL_STRATEGIES = ["no-ff", "ff", "ff-only", "rebase-no-ff", "rebase-ff-only", "squash", "squash-ff-only"]
+NEXT_PR_ID = [100]
+
+
+def branch_json(name, history, default=False):
+    return {"id": "refs/heads/" + name, "displayId": name, "type": "BRANCH",
+            "latestCommit": history[-1], "isDefault": default}
+
+
 def now_ms():
     return int(time.time() * 1000)
 
@@ -230,15 +258,41 @@ class Handler(BaseHTTPRequestHandler):
                     res.append(pr_json(pr, port))
             return self.send(200, paged(res, qs))
 
-        m = re.match(PR_RE + r"$", path)
+        m = re.match(r"^/rest/api/1\.0/projects/([^/]+)/repos/([^/]+)/branches$", path)
         if method == "GET" and m:
             key, slug = m.group(1), m.group(2)
             if (key, slug) not in REPOS:
                 return self.send(404, err("Repository %s/%s does not exist." % (key, slug)))
-            state = qs.get("state", ["OPEN"])[0].upper()
-            res = [pr_json(p, port) for _, p in sorted(PRS.items())
-                   if p["_repo"] == (key, slug) and (state == "ALL" or p["state"] == state)]
-            return self.send(200, paged(res, qs))
+            flt = qs.get("filterText", [""])[0].lower()
+            vals = [branch_json(n, h, n == "release/liv")
+                    for n, h in BRANCHES.get((key, slug), {}).items() if flt in n.lower()]
+            return self.send(200, paged(vals, qs))
+
+        m = re.match(r"^/rest/api/1\.0/projects/([^/]+)/repos/([^/]+)/settings/pull-requests$", path)
+        if method == "GET" and m:
+            return self.send(200, {
+                "mergeConfig": {"defaultStrategy": {"id": "no-ff", "name": "Merge commit"},
+                                "strategies": [{"id": s, "name": s, "enabled": s in ENABLED_STRATEGIES} for s in ALL_STRATEGIES]},
+                "requiredApprovers": 1, "requiredAllApprovers": False, "requiredSuccessfulBuilds": 0})
+
+        if method == "POST" and path == "/mock/commit":  # test-only: add a commit to a branch
+            key, slug, branch = body["project"], body["repo"], body["branch"]
+            hist = BRANCHES[(key, slug)][branch]
+            hist.append(sha("%s/%s/%s/%d" % (key, slug, branch, len(hist) + now_ms())))
+            return self.send(201, {"latestCommit": hist[-1]})
+
+        m = re.match(PR_RE + r"$", path)
+        if m:
+            key, slug = m.group(1), m.group(2)
+            if (key, slug) not in REPOS:
+                return self.send(404, err("Repository %s/%s does not exist." % (key, slug)))
+            if method == "POST":
+                return self.create_pr(key, slug, user, body, port)
+            if method == "GET":
+                state = qs.get("state", ["OPEN"])[0].upper()
+                res = [pr_json(p, port) for _, p in sorted(PRS.items())
+                       if p["_repo"] == (key, slug) and (state == "ALL" or p["state"] == state)]
+                return self.send(200, paged(res, qs))
 
         m = re.match(PR_RE + r"/(\d+)(/.*)?$", path)
         if m:
@@ -267,6 +321,58 @@ class Handler(BaseHTTPRequestHandler):
 
         self.send(404, err("No such resource: %s %s" % (method, path)))
 
+    def create_pr(self, key, slug, user, body, port):
+        if not isinstance(body, dict):
+            return self.send(400, err("A pull request body is required."))
+
+        def branch_of(ref):
+            return ((ref or {}).get("id") or "").replace("refs/heads/", "")
+
+        src, dst = branch_of(body.get("fromRef")), branch_of(body.get("toRef"))
+        if not src or not dst or src == dst:
+            return self.send(409, err("Pull requests can only be created between branches of two different repositories, "
+                                      "or two different branches of the same repository",
+                                      exceptionName="com.atlassian.bitbucket.pull.InvalidPullRequestTargetException"))
+        branches = BRANCHES.get((key, slug), {})
+        for name in (src, dst):
+            if name not in branches:
+                return self.send(404, err("Branch '%s' does not exist in %s/%s." % (name, key, slug),
+                                          exceptionName="com.atlassian.bitbucket.repository.NoSuchRefException"))
+        for pr in PRS.values():
+            if pr["_repo"] == (key, slug) and pr["state"] == "OPEN" and pr.get("_from") == src and pr.get("_to") == dst:
+                e = err("Only one pull request may be open for a given source and target branch.",
+                        exceptionName="com.atlassian.bitbucket.pull.DuplicatePullRequestException")
+                e["errors"][0]["existingPullRequest"] = pr_json(pr, port)
+                return self.send(409, e)
+        if branches[src][-1] == branches[dst][-1]:
+            return self.send(409, err("%s is already up-to-date with %s." % (dst, src),
+                                      exceptionName="com.atlassian.bitbucket.pull.EmptyPullRequestException"))
+        reviewers = []
+        for r in body.get("reviewers") or []:
+            name = ((r or {}).get("user") or {}).get("name")
+            if name not in USERS:
+                return self.send(404, err("User %s does not exist." % name))
+            if name == user:
+                return self.send(400, err("The author of a pull request cannot also be a reviewer."))
+            reviewers.append(name)
+        pid = NEXT_PR_ID[0]
+        NEXT_PR_ID[0] += 1
+        t = now_ms()
+        PRS[pid] = {
+            "id": pid, "version": 0, "title": body.get("title") or "%s -> %s" % (src, dst),
+            "description": body.get("description") or "",
+            "state": "OPEN", "open": True, "closed": False, "createdDate": t, "updatedDate": t,
+            "fromRef": ref(key, slug, src, branches[src][-1]),
+            "toRef": ref(key, slug, dst, branches[dst][-1]),
+            "locked": False,
+            "author": participant(user, "AUTHOR"),
+            "reviewers": [participant(r, "REVIEWER") for r in reviewers],
+            "participants": [],
+            "properties": {"openTaskCount": 0, "resolvedTaskCount": 0, "commentCount": 0},
+            "_repo": (key, slug), "_from": src, "_to": dst,
+        }
+        return self.send(201, pr_json(PRS[pid], port))
+
     def pr_route(self, method, sub, qs, user, body, pr, port):
         if method == "GET" and sub == "":
             return self.send(200, pr_json(pr, port))
@@ -286,6 +392,20 @@ class Handler(BaseHTTPRequestHandler):
             ms = merge_status(pr)
             if not ms["canMerge"] or pr["state"] != "OPEN":
                 return self.send(409, err("Pull request cannot be merged.", vetoes=ms["vetoes"]))
+            strategy = body.get("strategyId") if isinstance(body, dict) else None
+            if strategy and strategy not in ENABLED_STRATEGIES:
+                return self.send(409, err("The merge strategy '%s' is not enabled for this repository." % strategy))
+            src, dst = pr.get("_from"), pr.get("_to")
+            if src and dst:  # a branch-to-branch PR of a repo whose history the mock tracks
+                branches = BRANCHES[pr["_repo"]]
+                fast_forwardable = branches[dst][-1] in branches[src]
+                if strategy in ("ff-only", "rebase-ff-only", "squash-ff-only") and not fast_forwardable:
+                    return self.send(409, err("The pull request cannot be merged with a fast-forward: '%s' has commits that are not on '%s'." % (dst, src)))
+                if strategy in ("ff", "ff-only") and fast_forwardable:
+                    branches[dst] = list(branches[src])
+                else:
+                    branches[dst] = list(branches[src]) + [sha("merge-%d" % pr["id"])]
+                pr["toRef"]["latestCommit"] = branches[dst][-1]
             pr.update(state="MERGED", open=False, closed=True, updatedDate=now_ms())
             pr["version"] += 1
             return self.send(200, pr_json(pr, port))
