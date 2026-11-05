@@ -75,6 +75,12 @@ Casks/e-merger.rb               Homebrew cask (auto-bumped by CI)
   (`GET /projects/{k}/repos/{s}/pull-requests?state=OPEN`), paginated. Results are
   merged by `PROJECT/repo#id`; `seenBy` records which accounts' tokens returned the
   PR, `relations` records per account whether it is author / reviewer / approved.
+  A dashboard omits PRs the account is not author / reviewer / participant of —
+  typically a PR my other account opened without reviewers — so every PR is then
+  probed (`GET …/pull-requests/{id}`) with each account that has not seen it;
+  success adds the account to `seenBy` (and thus to the approve / merge buttons).
+  Approving as a non-reviewer makes the account a PARTICIPANT, which Bitbucket's
+  minimum-approvals check counts.
   Build statuses come from `GET /rest/build-status/1.0/commits/{latestCommit}`.
   Merge status (`GET …/merge` → `canMerge` + vetoes) is fetched lazily when a PR is
   selected and after every action.

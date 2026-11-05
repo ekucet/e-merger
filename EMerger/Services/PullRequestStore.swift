@@ -102,6 +102,40 @@ final class PullRequestStore {
                 }
             }
         }
+
+        // A dashboard only lists PRs the account authors / reviews / participates in,
+        // so a PR one of my accounts opened without reviewers is invisible to my other
+        // account's dashboard — yet that account can open and approve it. Probe every
+        // PR with each account that has not seen it; success adds the account to
+        // `seenBy`, failure (no repository access) silently leaves it out.
+        let probes: [(key: String, accountID: String, client: BitbucketClient)] = merged.values.flatMap { item in
+            enabled.compactMap { account in
+                guard !item.seenBy.contains(account.id), errors[account.id] == nil,
+                      let client = try? accounts.client(for: account) else { return nil }
+                return (item.id, account.id, client)
+            }
+        }
+        if !probes.isEmpty {
+            await withTaskGroup(of: (String, String, BBPullRequest?).self) { group in
+                for probe in probes {
+                    guard let item = merged[probe.key] else { continue }
+                    let project = item.pr.toRef.repository.project.key
+                    let repo = item.pr.toRef.repository.slug
+                    let id = item.pr.id
+                    group.addTask {
+                        let pr = try? await probe.client.pullRequest(project: project, repo: repo, id: id)
+                        return (probe.key, probe.accountID, pr)
+                    }
+                }
+                for await (key, accountID, pr) in group {
+                    guard let pr, pr.isOpen, var item = merged[key] else { continue }
+                    if pr.version > item.pr.version { item.pr = pr }
+                    if !item.seenBy.contains(accountID) { item.seenBy.append(accountID) }
+                    merged[key] = item
+                }
+            }
+        }
+
         for key in merged.keys {
             guard var item = merged[key] else { continue }
             item.relations = Self.relations(for: item.pr, accounts: enabled)

@@ -68,12 +68,25 @@ struct Harness {
             }.sorted()
             print("  \(item.id) v\(item.pr.version) \(item.pr.approvedCount)/\(item.pr.reviewers.count) build=\(item.overallBuild) seen=\(seen) \(rel)")
         }
-        check("6 open PRs aggregated", store.items.count == 6, "\(store.items.count)")
+        check("7 open PRs aggregated", store.items.count == 7, "\(store.items.count)")
         check("no account errors", store.accountErrors.isEmpty)
 
         let pr1 = "MOB/ios-app#1", pr2 = "MOB/ios-app#2", pr3 = "MOB/android-app#3"
         let pr4 = "CORE/payments#4", pr5 = "MOB/ios-app#5", pr6 = "CORE/payments#6"
         check("PR6 (no reviewers) found via watched repo", store.item(for: pr6) != nil)
+
+        // PR7: opened by Geliştirici, no reviewers, repo not watched → only the author's
+        // dashboard lists it; Müdür must be found via the per-PR probe and be offered.
+        let pr7 = "MOB/ios-app#7"
+        if let i7 = store.item(for: pr7) {
+            let seen = i7.seenBy.compactMap { accounts.account(id: $0)?.label }.sorted()
+            check("PR7 seen by both accounts after probe", seen == ["Geliştirici", "Müdür"], "\(seen)")
+            check("PR7 approvable by Müdür although not a reviewer", i7.accountsThatCanApprove(from: accounts.enabledAccounts).map(\.label) == ["Müdür"])
+            check("PR7 awaiting my approval (opened by my other account)", i7.awaitingMyApproval)
+            check("PR7 not awaiting for a stranger's PR logic (PR6 has no reviewers, same author) → both flagged", store.item(for: pr6)?.awaitingMyApproval == true)
+        } else {
+            check("PR7 found via probe", false, store.items.map(\.id).joined(separator: ","))
+        }
         check("PR1 seen by both accounts", store.item(for: pr1)?.seenBy.count == 2)
         check("PR5 build failed", store.item(for: pr5)?.overallBuild == .failed)
         check("PR3 build in progress", store.item(for: pr3)?.overallBuild == .inProgress)
@@ -109,6 +122,18 @@ struct Harness {
             try await store.approve(pr1, with: dev)
             check("author self-approve rejected", false, "unexpectedly succeeded")
         } catch { check("author self-approve rejected", true, error.localizedDescription) }
+
+        // PR7: approve with my other account although it is not a reviewer (becomes a
+        // participant), then merge with it.
+        do {
+            try await store.approve(pr7, with: mudur)
+            let i7 = store.item(for: pr7)
+            check("PR7 approved by Müdür as participant", i7?.relations[mudur.id]?.hasApproved == true, "\(String(describing: i7?.relations[mudur.id]))")
+            check("PR7 participant approval satisfies merge check", i7?.mergeStatus?.canMerge == true, "\(String(describing: i7?.mergeStatus?.vetoes))")
+            check("PR7 no longer awaiting my approval", i7?.awaitingMyApproval == false)
+            try await store.merge(pr7, with: mudur)
+            check("PR7 merged by Müdür and removed", store.item(for: pr7) == nil)
+        } catch { check("approve + merge PR7", false, error.localizedDescription) }
 
         // Un-approve then re-approve
         do {

@@ -87,6 +87,9 @@ make_pr(3, "MOB", "android-app", "ayse", ["mudur", "gelistirici"], "feature/push
 make_pr(4, "CORE", "payments", "mudur", ["gelistirici", "ayse"], "feature/refunds", "Refund API endpoints")
 make_pr(5, "MOB", "ios-app", "gelistirici", ["mudur"], "bugfix/crash-on-launch", "Fix crash on launch", tasks=(0, 0, 1))
 make_pr(6, "CORE", "payments", "gelistirici", [], "chore/deps", "Bump dependencies")
+# Opened by the developer with no reviewers, in a repo nobody watches: only the author's
+# dashboard lists it; the other account must find it by probing the PR directly.
+make_pr(7, "MOB", "ios-app", "gelistirici", [], "feature/no-reviewers-yet", "Opened without reviewers")
 
 
 def pr_json(pr, port):
@@ -99,7 +102,8 @@ def pr_json(pr, port):
 def merge_status(pr):
     vetoes = []
     conflicted = pr["id"] in CONFLICTED
-    approvals = sum(1 for r in pr["reviewers"] if r["approved"])
+    # Bitbucket's "minimum approvals" check counts reviewers and participants alike.
+    approvals = sum(1 for r in pr["reviewers"] + pr["participants"] if r["approved"])
     need = MIN_APPROVALS.get(pr["id"], 1)
     if conflicted:
         vetoes.append({"summaryMessage": "Merge conflicts",
@@ -297,10 +301,10 @@ class Handler(BaseHTTPRequestHandler):
             status = (body or {}).get("status") if isinstance(body, dict) else None
             if status not in ("APPROVED", "UNAPPROVED", "NEEDS_WORK"):
                 return self.send(400, err("Invalid status."))
-            ent = next((r for r in pr["reviewers"] if r["user"]["name"] == slug), None)
-            if ent is None:
-                ent = participant(slug, "REVIEWER")
-                pr["reviewers"].append(ent)
+            ent = next((r for r in pr["reviewers"] + pr["participants"] if r["user"]["name"] == slug), None)
+            if ent is None:  # a non-reviewer who approves becomes a PARTICIPANT (real Bitbucket behaviour)
+                ent = participant(slug, "PARTICIPANT")
+                pr["participants"].append(ent)
             ent["approved"] = status == "APPROVED"
             ent["status"] = status
             pr["version"] += 1

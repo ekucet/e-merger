@@ -72,8 +72,15 @@ struct PullRequestItem: Identifiable, Hashable, Sendable {
         relations.values.contains { $0.isAuthor }
     }
 
+    /// One of my accounts could approve this right now: it sees the PR, is not the
+    /// author, has not approved — and is either a listed reviewer or the PR was
+    /// opened by another of my accounts (no reviewer added yet, my other identity
+    /// is the one expected to approve).
     var awaitingMyApproval: Bool {
-        relations.values.contains { !$0.isAuthor && !$0.hasApproved && $0.isReviewer }
+        relations.values.contains { rel in
+            seenBy.contains(rel.accountID) && !rel.isAuthor && !rel.hasApproved
+                && (rel.isReviewer || isAuthoredByAnyOfMine)
+        }
     }
 
     var isMerged: Bool { pr.state == "MERGED" }
