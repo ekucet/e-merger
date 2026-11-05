@@ -5,6 +5,15 @@
     <link>https://github.com/ersel95/e-merger</link>
     <description>E-Merger updates</description>
     <item>
+      <title>E-Merger 1.0.1</title>
+      <pubDate>Thu, 05 Nov 2026 15:30:10 +0000</pubDate>
+      <sparkle:version>1.0.1</sparkle:version>
+      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/ersel95/e-merger/releases/tag/v1.0.1</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/ersel95/e-merger/releases/download/v1.0.1/E-Merger-1.0.1.dmg" length="3051026" type="application/octet-stream" sparkle:edSignature="SYeHK3YuBqPBucELw7IKBxsME/dnQUyob8nHIVuUnKwrGWP+i8U9I3ETKDhnJYj/d1NgYVDfYdUTvwJLKLgEAg==" />
+    </item>
+    <item>
       <title>E-Merger 1.0.0</title>
       <pubDate>Thu, 05 Nov 2026 15:25:09 +0000</pubDate>
       <sparkle:version>1.0.0</sparkle:version>
