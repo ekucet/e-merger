@@ -33,6 +33,7 @@ SOURCES = [
     ("Services/ActivityLog.swift", "Services"),
     ("Services/Notifier.swift", "Services"),
     ("Services/ReleaseRunner.swift", "Services"),
+    ("Views/Components.swift", "Views"),
     ("Views/ContentView.swift", "Views"),
     ("Views/PullRequestListView.swift", "Views"),
     ("Views/PullRequestDetailView.swift", "Views"),

@@ -28,6 +28,8 @@ final class PullRequestStore {
     var lastActionError: String?
     /// Last action success, surfaced briefly by the UI.
     var lastActionMessage: String?
+    /// Successful merges this session; the UI throws confetti when it grows.
+    private(set) var mergeCount = 0
 
     private var autoRefreshTask: Task<Void, Never>?
     private var previousAwaiting: Set<String>?
@@ -67,9 +69,11 @@ final class PullRequestStore {
                 group.addTask {
                     do {
                         var all = try await client.dashboardPullRequests()
+                        // A watched repo this account cannot read must not discard its whole dashboard.
                         for repo in watched {
-                            let extra = try await client.pullRequests(project: repo.projectKey, repo: repo.slug)
-                            all.append(contentsOf: extra)
+                            if let extra = try? await client.pullRequests(project: repo.projectKey, repo: repo.slug) {
+                                all.append(contentsOf: extra)
+                            }
                         }
                         return (account, .success(all))
                     } catch {
@@ -136,19 +140,44 @@ final class PullRequestStore {
             }
         }
 
+        // A VPN drop or an expired token says nothing about the PRs themselves: keep the
+        // last known copy of whatever the failing account saw until it answers again.
+        for (key, old) in previous where merged[key] == nil && old.seenBy.contains(where: { errors[$0] != nil }) {
+            merged[key] = old
+        }
+
+        // Show the last known merge status while the new one loads. Merge checks can
+        // change without the PR changing (a build finishing), so only an unchanged,
+        // already mergeable PR skips the re-check.
+        var statusKeys: [String] = []
         for key in merged.keys {
             guard var item = merged[key] else { continue }
             item.relations = Self.relations(for: item.pr, accounts: enabled)
-            if let old = previous[key], old.pr.version == item.pr.version {
-                item.mergeStatus = old.mergeStatus
-            }
+            let old = previous[key]
+            item.mergeStatus = old?.mergeStatus
+            if old?.pr != item.pr || old?.mergeStatus?.canMerge != true { statusKeys.append(key) }
             merged[key] = item
         }
 
         items = merged.values.sorted { ($0.pr.updatedDate ?? 0) > ($1.pr.updatedDate ?? 0) }
         accountErrors = errors
-        lastRefresh = Date()
+        if !fetched.isEmpty { lastRefresh = Date() }
         notifyNewApprovalsIfNeeded()
+        await loadMergeStatuses(for: statusKeys)
+    }
+
+    /// Fills the list's "Hazır" / "Çakışma" states without waiting for a PR to be
+    /// selected, a few requests at a time: `GET …/merge` runs the server's merge checks.
+    private func loadMergeStatuses(for keys: [String]) async {
+        let batchSize = 4
+        for start in stride(from: 0, to: keys.count, by: batchSize) {
+            let batch = keys[start..<min(start + batchSize, keys.count)]
+            await withTaskGroup(of: Void.self) { group in
+                for key in batch {
+                    group.addTask { await self.loadMergeStatus(for: key) }
+                }
+            }
+        }
     }
 
     /// Re-reads one PR (and its merge status) through `account`.
@@ -199,8 +228,10 @@ final class PullRequestStore {
             )
         }
         try await refreshOne(key, via: account)
-        if status == .approved {
-            lastActionMessage = "\(account.label) onayladı: \(item.pr.title)"
+        switch status {
+        case .approved: lastActionMessage = "👍 \(account.label) onayladı: \(item.pr.title)"
+        case .unapproved: lastActionMessage = "↩️ \(account.label) kararını geri aldı: \(item.pr.title)"
+        case .needsWork: lastActionMessage = "🔧 \(account.label) düzeltme istedi: \(item.pr.title)"
         }
     }
 
@@ -221,7 +252,8 @@ final class PullRequestStore {
             throw EMergerError.outOfDate(currentVersion: v)
         }
         items.removeAll { $0.id == key }
-        lastActionMessage = "\(account.label) merge etti: \(item.pr.title)"
+        lastActionMessage = "🤌 Mamma mia! \(account.label) merge etti: \(item.pr.title)"
+        mergeCount += 1
     }
 
     /// Approve with one account, wait until Bitbucket reports the PR mergeable, then merge.
@@ -248,6 +280,7 @@ final class PullRequestStore {
             try await client.comment(project: pr.projectKey, repo: pr.repoSlug, id: pr.id, text: text)
         }
         try await refreshOne(key, via: account)
+        lastActionMessage = "💬 \(account.label) yorum yazdı: \(item.pr.title)"
     }
 
     /// Any account whose token sees the PR (for read-only calls).

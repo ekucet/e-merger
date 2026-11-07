@@ -147,7 +147,14 @@ struct BBPullRequest: Codable, Hashable, Sendable, Identifiable {
         createdDate.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000) }
     }
 
-    var approvedCount: Int { reviewers.filter(\.approved).count }
+    /// Approvals from reviewers and participants alike: approving as a non-reviewer
+    /// makes the account a participant, which Bitbucket's minimum-approvals check counts.
+    var approvedCount: Int { allParticipants.filter(\.approved).count }
+
+    /// "1/2" when reviewers are assigned, "1 onay" when nobody was asked.
+    var approvalSummary: String {
+        reviewers.isEmpty ? "\(approvedCount) onay" : "\(approvedCount)/\(max(reviewers.count, approvedCount))"
+    }
 
     var isOpen: Bool { state == "OPEN" }
 

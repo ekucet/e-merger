@@ -20,6 +20,9 @@ struct EMergerApp: App {
     @StateObject private var updater = UpdaterController()
     @Environment(\.openWindow) private var openWindow
 
+    /// UI strings are Turkish; dates and relative times must not fall back to the system language.
+    private static let locale = Locale(identifier: "tr_TR")
+
     init() {
         let accounts = AccountStore()
         let log = ActivityLog()
@@ -34,6 +37,8 @@ struct EMergerApp: App {
         WindowGroup("E-Merger") {
             ContentView(accounts: accounts, prs: prs, releases: releases)
                 .frame(minWidth: 1040, minHeight: 640)
+                .fontDesign(.rounded)
+                .environment(\.locale, Self.locale)
         }
         .windowStyle(.titleBar)
         .commands {
@@ -58,10 +63,14 @@ struct EMergerApp: App {
         Window("İşlem Günlüğü", id: "activity") {
             ActivityLogView(log: log)
                 .frame(minWidth: 760, minHeight: 400)
+                .fontDesign(.rounded)
+                .environment(\.locale, Self.locale)
         }
 
         Settings {
             SettingsView(accounts: accounts, prs: prs)
+                .fontDesign(.rounded)
+                .environment(\.locale, Self.locale)
         }
     }
 }

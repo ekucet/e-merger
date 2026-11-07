@@ -26,6 +26,9 @@ enum AppSettings {
     /// Remembered sidebar filter.
     static let filterKey = "EMerger.ui.filter"
 
+    /// Remembered sidebar grouping (sections per repository).
+    static let groupByRepoKey = "EMerger.ui.groupByRepo"
+
     static var refreshInterval: Int {
         UserDefaults.standard.object(forKey: refreshIntervalKey) as? Int ?? defaultRefreshInterval
     }

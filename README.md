@@ -19,7 +19,8 @@ profiles.
   "Doğrula" resolves the Bitbucket username for you.
 - **One list for everything** — each account's dashboard (PRs you author / review)
   plus any repositories you choose to watch; merged, deduplicated, searchable, with
-  filters *Tümü · Onayımı bekleyen · Merge'e hazır · Benim açtıklarım*.
+  count tiles *Tümü · Onayım · Hazır · Benim*, optional grouping by repository and a
+  Dock badge for PRs waiting on you.
 - **Per-PR detail** — reviewers and their status, merge check with Bitbucket's
   vetoes (required approvals, conflicts…).
 - **Actions with the right account** — *Onayla · Müdür*, *Merge · Müdür*,

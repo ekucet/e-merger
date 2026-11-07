@@ -18,6 +18,7 @@ struct ReleaseFlowView: View {
 
     @AppStorage("EMerger.release.lastStage") private var lastStageIndex = 0
     @AppStorage(AppSettings.confirmMergeKey) private var confirmMerge = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pipelineID: String
     @State private var stageIndex: Int
     @State private var confirmFinalStage = false
@@ -80,12 +81,22 @@ struct ReleaseFlowView: View {
                 noPipelines
             } else {
                 controls
+                if showsRun && runner.isRunning {
+                    ProgressView(value: Double(runner.finishedCount), total: Double(max(runner.steps.count, 1)))
+                        .tint(Brand.sky)
+                }
                 stepsList
                 footer
             }
         }
         .padding(20)
         .frame(width: 600)
+        .fontDesign(.rounded)
+        .overlay {
+            if showsRun && runner.outcome == .success && !reduceMotion {
+                ConfettiView()
+            }
+        }
         .onChange(of: pipelineID) { _, _ in
             if !runner.isRunning { runner.reset() }
         }
@@ -109,12 +120,16 @@ struct ReleaseFlowView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "shippingbox.fill")
-                .font(.system(size: 30))
-                .foregroundStyle(.tint)
+            Image(systemName: "airplane.departure")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(Brand.ink)
+                .frame(width: 48, height: 48)
+                .background(Brand.gradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .symbolEffect(.bounce, value: runner.isRunning)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Yayına al")
-                    .font(.title2.weight(.semibold))
+                Text("Yayına al 🚀")
+                    .font(.title2.weight(.bold))
                 Text("Her adım bir PR: bir hesabın açar, diğeri onaylayıp merge eder. Adımlar sırayla, tek tuşla.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -137,17 +152,45 @@ struct ReleaseFlowView: View {
             }
             GridRow {
                 Text("Hedef")
-                Picker("Hedef", selection: $stageIndex) {
-                    ForEach(Array((pipeline?.stages ?? []).enumerated()), id: \.offset) { index, stage in
-                        Text(stage.label).tag(index)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: 340)
+                stageChain
             }
         }
         .disabled(runner.isRunning)
+    }
+
+    /// The chain itself is the picker: everything up to the chosen stage lights up.
+    private var stageChain: some View {
+        HStack(spacing: 6) {
+            if let pipeline {
+                Text(pipeline.sourceBranch)
+                    .font(.caption.weight(.semibold))
+                    .monospaced()
+                    .foregroundStyle(.secondary)
+                ForEach(Array(pipeline.stages.enumerated()), id: \.offset) { index, stage in
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(index <= clampedStage ? AnyShapeStyle(Brand.sky) : AnyShapeStyle(.tertiary))
+                        .accessibilityHidden(true)
+                    Button {
+                        stageIndex = index
+                    } label: {
+                        Text(stage.label)
+                            .font(.callout.weight(.bold))
+                            .foregroundStyle(index <= clampedStage ? AnyShapeStyle(Brand.ink) : AnyShapeStyle(.secondary))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(
+                                index <= clampedStage ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(.quaternary.opacity(0.6)),
+                                in: Capsule()
+                            )
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(index == clampedStage ? [.isButton, .isSelected] : .isButton)
+                }
+            }
+        }
+        .animation(.snappy(duration: 0.2), value: clampedStage)
     }
 
     private var stepsList: some View {
@@ -159,7 +202,7 @@ struct ReleaseFlowView: View {
                 }
             }
         }
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .card()
     }
 
     private func stepRow(_ state: ReleaseStepState) -> some View {
@@ -242,16 +285,19 @@ struct ReleaseFlowView: View {
                 Button("Durdur", role: .destructive) { runner.cancel() }
             } else if showsRun {
                 Button("Kapat", action: onClose).keyboardShortcut(.cancelAction)
-                if runner.outcome != .success {
-                    Button("Yeniden dene") { start() }
-                        .buttonStyle(.borderedProminent)
+                if runner.outcome == .success {
+                    Button("Yeni yayın") { runner.reset() }
+                } else {
+                    // Same gate as Başlat: a retry may reach the final stage too.
+                    Button("Yeniden dene") { requestStart() }
+                        .buttonStyle(BrandButtonStyle())
                         .keyboardShortcut(.defaultAction)
                         .disabled(!canStart)
                 }
             } else {
                 Button("Vazgeç", action: onClose).keyboardShortcut(.cancelAction)
                 Button("Başlat · \(targetLabel)") { requestStart() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BrandButtonStyle())
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canStart)
             }
@@ -263,8 +309,8 @@ struct ReleaseFlowView: View {
         if showsRun, let outcome = runner.outcome {
             switch outcome {
             case .success:
-                Label("Tamamlandı · \(runner.finishedCount) adım", systemImage: "checkmark.seal.fill")
-                    .font(.callout).foregroundStyle(.green)
+                Label("Yayında! 🎉 \(runner.finishedCount) adım", systemImage: "checkmark.seal.fill")
+                    .font(.callout.weight(.semibold)).foregroundStyle(.green)
             case .failed:
                 Label("Durdu — hata adımın altında", systemImage: "exclamationmark.triangle.fill")
                     .font(.callout).foregroundStyle(.red)

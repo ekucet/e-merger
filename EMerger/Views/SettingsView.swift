@@ -35,6 +35,14 @@ struct SettingsView: View {
 struct AccountsSettingsView: View {
     @Bindable var accounts: AccountStore
     @State private var editorTarget: AccountEditorTarget?
+    @State private var pendingDelete: BitbucketAccount?
+
+    /// Release chains that stop working if `account` goes away.
+    private func pipelinesUsing(_ account: BitbucketAccount) -> Int {
+        accounts.releasePipelines.filter {
+            $0.starterAccountID == account.id || $0.partnerAccountID == account.id
+        }.count
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -44,8 +52,12 @@ struct AccountsSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             List {
+                if accounts.accounts.isEmpty {
+                    Text("Henüz hesap yok. İlkini aşağıdan ekle 👇").foregroundStyle(.secondary)
+                }
                 ForEach(accounts.accounts) { account in
                     HStack(spacing: 10) {
+                        InitialsAvatar(name: account.label, size: 26)
                         Toggle("", isOn: Binding(
                             get: { account.isEnabled },
                             set: { value in
@@ -73,11 +85,12 @@ struct AccountsSettingsView: View {
                         Spacer()
                         Button("Düzenle") { editorTarget = AccountEditorTarget(account: account) }
                         Button(role: .destructive) {
-                            accounts.remove(accountID: account.id)
+                            pendingDelete = account
                         } label: {
                             Image(systemName: "trash")
                         }
                         .help("Hesabı ve Keychain'deki token'ını sil")
+                        .accessibilityLabel("\(account.label) hesabını sil")
                     }
                     .padding(.vertical, 2)
                 }
@@ -98,6 +111,21 @@ struct AccountsSettingsView: View {
             AccountEditorView(accounts: accounts, existing: target.account) {
                 editorTarget = nil
             }
+        }
+        .confirmationDialog(
+            pendingDelete.map { "\($0.label) hesabı silinsin mi?" } ?? "",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { account in
+            Button("Hesabı sil", role: .destructive) {
+                accounts.remove(accountID: account.id)
+            }
+            Button("Vazgeç", role: .cancel) {}
+        } message: { account in
+            let used = pipelinesUsing(account)
+            Text("Keychain'deki token da silinir, bu geri alınamaz."
+                 + (used > 0 ? " \(used) yayın akışı bu hesabı kullanıyor ve yeniden ayarlanması gerekecek." : ""))
         }
     }
 }
