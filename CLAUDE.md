@@ -43,17 +43,19 @@ EMerger/
 │                               (config.json), PullRequestStore (aggregate + actions),
 │                               ActivityLog (activity.jsonl), Notifier,
 │                               ReleaseRunner (runs a chain hop by hop)
-├── Views/                      ContentView (split view), PullRequestListView,
+├── Views/                      Components (Brand palette, tiles, confetti, toast),
+│                               ContentView (split view), PullRequestListView,
 │                               PullRequestDetailView, SettingsView (+ Accounts /
 │                               Depolar / Yayın / Genel tabs), AccountEditorView,
 │                               ActivityLogView, UpdaterView, ReleaseFlowView ("Yayına
 │                               al" sheet), ReleaseSettingsView (Yayın tab + editor)
-├── Resources/Assets.xcassets   AppIcon (generated from SF Symbol), AccentColor
+├── Resources/Assets.xcassets   AppIcon (drawn by scripts/generate_icon.swift), AccentColor
 ├── Info.plist                  Sparkle keys + ATS (local networking only)
 └── EMerger.entitlements        unsandboxed, network client
 generate_pbxproj.py             project generator (source of truth for the target)
 scripts/                        build-app.sh, build-dmg.sh (unsigned), release-dmg.sh
-                                (sign + notarize + staple, CI), update_appcast.py, e2e.sh
+                                (sign + notarize + staple, CI), update_appcast.py, e2e.sh,
+                                generate_icon.swift (re-draws every AppIcon size)
 tests/                          mock_bitbucket.py (stdlib Bitbucket REST mock),
                                 Harness.swift (headless end-to-end run of Models+Services)
 .github/workflows/release.yml   tag v* -> sign + notarize + Release + cask/appcast bump
@@ -84,8 +86,10 @@ Casks/e-merger.rb               Homebrew cask (auto-bumped by CI)
   success adds the account to `seenBy` (and thus to the approve / merge buttons).
   Approving as a non-reviewer makes the account a PARTICIPANT, which Bitbucket's
   minimum-approvals check counts.
-  Merge status (`GET …/merge` → `canMerge` + vetoes) is fetched lazily when a PR is
-  selected and after every action.
+  Merge status (`GET …/merge` → `canMerge` + vetoes) is fetched after each refresh in
+  batches of 4, so the list's `phase` and the "Hazır" filter work unselected; an
+  unchanged, already mergeable PR skips the re-check. It is also re-read on selection
+  and after every action. A failing account keeps its last known PRs in the list.
 - **Actions** (`PullRequestStore`): approve / unapprove / needs-work =
   `PUT …/participants/{userSlug}` with `{"status": …}` — Bitbucket refuses the
   author approving their own PR (409), so `accountsThatCanApprove` never offers the
@@ -110,6 +114,11 @@ Casks/e-merger.rb               Homebrew cask (auto-bumped by CI)
   current call. The final stage asks for confirmation when `confirmMerge` is on.
   Chains are stored in `config.json` (`releasePipelines`); `Config` decodes with
   `decodeIfPresent` so older files never lose their accounts.
+- **Look & feel**: the icon's mascot is Mergino, a merge road sign with a moustache
+  (an original character; don't copy existing meme characters). `Brand` holds the
+  palette: sign yellow for the one primary button per screen (text on it is `Brand.ink`),
+  sky blue for tinted text. Playful copy is for empty states and successes; errors and
+  destructive confirmations stay plain. Confetti is skipped under Reduce Motion.
 - **No CI.** By decision (2026-11-05) the app neither shows build statuses nor
   triggers CI — it is only for approving, merging and promoting releases. Don't
   add CI features back.

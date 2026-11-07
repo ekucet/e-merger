@@ -90,7 +90,7 @@ struct AccountEditorView: View {
                             Text(verifyMessage)
                                 .font(.caption)
                                 .foregroundStyle(verifyFailed ? .red : .green)
-                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }

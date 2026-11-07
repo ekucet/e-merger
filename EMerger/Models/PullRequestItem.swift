@@ -74,6 +74,53 @@ struct PullRequestItem: Identifiable, Hashable, Sendable {
     }
 
     var isMerged: Bool { pr.state == "MERGED" }
+
+    /// The one state the list leads with, most urgent first.
+    var phase: PullRequestPhase {
+        if mergeStatus?.conflicted == true { return .conflicted }
+        if pr.allParticipants.contains(where: { $0.participantStatus == .needsWork }) { return .needsWork }
+        if mergeStatus?.canMerge == true { return .ready }
+        if awaitingMyApproval { return .awaitingMe }
+        return .waiting
+    }
+
+    /// Case-insensitive match on title, repo, author, either branch; `12` or `#12` matches the id.
+    func matches(search text: String) -> Bool {
+        let needle = text.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return true }
+        if String(pr.id) == needle || "#\(pr.id)" == needle { return true }
+        return [pr.title, repoDisplay, pr.author.user.shownName, pr.author.user.name, pr.fromRef.branchName, pr.toRef.branchName]
+            .contains { $0.localizedCaseInsensitiveContains(needle) }
+    }
+}
+
+/// A PR's at-a-glance state in the list.
+enum PullRequestPhase: Sendable {
+    case conflicted
+    case needsWork
+    case ready
+    case awaitingMe
+    case waiting
+
+    var title: String {
+        switch self {
+        case .conflicted: return "Çakışma"
+        case .needsWork: return "Düzeltme istendi"
+        case .ready: return "Hazır"
+        case .awaitingMe: return "Onay"
+        case .waiting: return "Bekliyor"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .conflicted: return "exclamationmark.triangle.fill"
+        case .needsWork: return "wrench.adjustable.fill"
+        case .ready: return "checkmark"
+        case .awaitingMe: return "hand.wave.fill"
+        case .waiting: return "hourglass"
+        }
+    }
 }
 
 /// Sidebar filter.
@@ -85,12 +132,40 @@ enum PullRequestFilter: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    /// Short enough for four tiles in the narrowest sidebar.
     var title: String {
         switch self {
         case .all: return "Tümü"
-        case .awaitingMe: return "Onayımı bekleyen"
-        case .ready: return "Merge'e hazır"
-        case .mine: return "Benim açtıklarım"
+        case .awaitingMe: return "Onayım"
+        case .ready: return "Hazır"
+        case .mine: return "Benim"
+        }
+    }
+
+    var emptyTitle: String {
+        switch self {
+        case .all: return "Açık PR yok 🌴"
+        case .awaitingMe: return "Sıra sende değil 😎"
+        case .ready: return "Merge'e hazır PR yok"
+        case .mine: return "Açtığın PR yok"
+        }
+    }
+
+    var emptyDetail: String {
+        switch self {
+        case .all: return "Her şey tertemiz. Kahveni tazeleyebilirsin."
+        case .awaitingMe: return "Onayını bekleyen PR kalmadı."
+        case .ready: return "Onaylar tamamlanınca burada görünecekler."
+        case .mine: return "Hesaplarının açtığı PR'lar burada görünür."
+        }
+    }
+
+    func matches(_ item: PullRequestItem) -> Bool {
+        switch self {
+        case .all: return true
+        case .awaitingMe: return item.awaitingMyApproval
+        case .ready: return item.mergeStatus?.canMerge == true
+        case .mine: return item.isAuthoredByAnyOfMine
         }
     }
 

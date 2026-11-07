@@ -12,6 +12,7 @@ import SwiftUI
 struct ReleasePipelinesSettingsView: View {
     @Bindable var accounts: AccountStore
     @State private var editorTarget: PipelineEditorTarget?
+    @State private var pendingDelete: ReleasePipeline?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -39,10 +40,12 @@ struct ReleasePipelinesSettingsView: View {
                         Spacer()
                         Button("Düzenle") { editorTarget = PipelineEditorTarget(pipeline: pipeline) }
                         Button(role: .destructive) {
-                            accounts.removePipeline(id: pipeline.id)
+                            pendingDelete = pipeline
                         } label: {
                             Image(systemName: "trash")
                         }
+                        .help("Akışı sil")
+                        .accessibilityLabel("\(pipeline.name) akışını sil")
                     }
                     .padding(.vertical, 2)
                 }
@@ -66,6 +69,19 @@ struct ReleasePipelinesSettingsView: View {
             ReleasePipelineEditorView(accounts: accounts, existing: target.pipeline) {
                 editorTarget = nil
             }
+        }
+        .confirmationDialog(
+            pendingDelete.map { "\($0.name) akışı silinsin mi?" } ?? "",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { pipeline in
+            Button("Akışı sil", role: .destructive) {
+                accounts.removePipeline(id: pipeline.id)
+            }
+            Button("Vazgeç", role: .cancel) {}
+        } message: { pipeline in
+            Text("\(pipeline.repoDisplay) · \(pipeline.chainDisplay). Bu geri alınamaz; depo ve dallara dokunulmaz.")
         }
     }
 

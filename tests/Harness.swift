@@ -101,6 +101,20 @@ struct Harness {
             check("PR4 default merge account is Geliştirici (non-author)", store.defaultMergeAccount(for: i4)?.label == "Geliştirici")
         }
 
+        // The list knows each PR's state without it being selected first.
+        check("PR2 ready in the list after refresh", store.item(for: pr2)?.phase == .ready, "\(String(describing: store.item(for: pr2)?.mergeStatus))")
+        check("PR3 conflict in the list after refresh", store.item(for: pr3)?.phase == .conflicted)
+        check("PR1 awaiting me in the list after refresh", store.item(for: pr1)?.phase == .awaitingMe)
+        check("Hazır filter holds only mergeable PRs", store.items.filter(PullRequestFilter.ready.matches).allSatisfy { $0.mergeStatus?.canMerge == true })
+        check("search matches #id and target branch", store.item(for: pr1)?.matches(search: "#1") == true && store.item(for: pr1)?.matches(search: "develop") == true)
+
+        // A watched repo an account cannot read must not cost it its whole dashboard.
+        accounts.addWatchedRepo(projectKey: "MOB", slug: "does-not-exist")
+        await store.refresh()
+        check("unreadable watched repo → no account error", store.accountErrors.isEmpty, "\(store.accountErrors)")
+        check("unreadable watched repo → list intact", store.items.count == 7, "\(store.items.count)")
+        if let repo = accounts.watchedRepos.first(where: { $0.slug == "does-not-exist" }) { accounts.removeWatchedRepo(id: repo.id) }
+
         // Merge status
         await store.loadMergeStatus(for: pr1)
         check("PR1 not mergeable before approval", store.item(for: pr1)?.mergeStatus?.canMerge == false, "\(String(describing: store.item(for: pr1)?.mergeStatus))")
@@ -127,6 +141,7 @@ struct Harness {
             try await store.approve(pr7, with: mudur)
             let i7 = store.item(for: pr7)
             check("PR7 approved by Müdür as participant", i7?.relations[mudur.id]?.hasApproved == true, "\(String(describing: i7?.relations[mudur.id]))")
+            check("PR7 participant approval is counted", i7?.pr.approvedCount == 1 && i7?.pr.approvalSummary == "1 onay", i7?.pr.approvalSummary ?? "nil")
             check("PR7 participant approval satisfies merge check", i7?.mergeStatus?.canMerge == true, "\(String(describing: i7?.mergeStatus?.vetoes))")
             check("PR7 no longer awaiting my approval", i7?.awaitingMyApproval == false)
             try await store.merge(pr7, with: mudur)
@@ -268,6 +283,12 @@ struct Harness {
         try? accounts.upsert(bad, credential: nil)
         await store.refresh()
         check("bad token → accountErrors entry", store.accountErrors[bad.id]?.contains("401") == true || store.accountErrors[bad.id]?.contains("reddedildi") == true, store.accountErrors[bad.id] ?? "nil")
+
+        // Every account failing (VPN down) must leave the last known list in place.
+        let knownBefore = store.items.map(\.id).sorted()
+        for account in accounts.accounts { try? KeychainStore.saveCredential(BitbucketCredential(mode: .bearer, secret: "nope"), forAccountID: account.id) }
+        await store.refresh()
+        check("all accounts failing → list kept", store.items.map(\.id).sorted() == knownBefore && !knownBefore.isEmpty, "\(store.items.count) of \(knownBefore.count)")
         accounts.remove(accountID: bad.id)
 
         try? KeychainStore.deleteCredential(forAccountID: "acc-mudur")
